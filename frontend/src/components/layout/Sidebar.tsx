@@ -7,6 +7,7 @@ import {
   Calculator,
   Users,
   TrendingUp,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
@@ -21,6 +22,11 @@ const navigation = [
     name: "Traders",
     href: "/traders",
     icon: Users,
+  },
+  {
+    name: "Import",
+    href: "/import",
+    icon: Download,
   },
   {
     name: "Calculator",

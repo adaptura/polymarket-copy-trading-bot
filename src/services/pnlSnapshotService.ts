@@ -154,7 +154,7 @@ class PnLSnapshotService {
   async fetchHistoricalPnL(
     address: string,
     interval: 'all' | '1m' = 'all',
-    fidelity: '1d' | '1h' = '1d'
+    fidelity: '1d' | '1h' = '1h'
   ): Promise<PnLDataPoint[]> {
     const url = `https://user-pnl-api.polymarket.com/user-pnl?user_address=${address}&interval=${interval}&fidelity=${fidelity}`;
 
@@ -173,7 +173,7 @@ class PnLSnapshotService {
 
       return data.map((point) => ({
         time: new Date(point.t * 1000),
-        pnl: point.p / 100, // Convert from cents to dollars
+        pnl: point.p, // Already in dollars
       }));
     } catch (error) {
       Logger.error(`Failed to fetch historical P&L for ${address}: ${error}`);
@@ -523,6 +523,25 @@ class PnLSnapshotService {
   }
 
   /**
+   * Clear snapshots (all or for specific trader)
+   */
+  async clearSnapshots(traderAddress?: string): Promise<number> {
+    let sql: string;
+    let params: string[];
+
+    if (traderAddress) {
+      sql = 'DELETE FROM pnl_snapshots WHERE trader_address = $1';
+      params = [traderAddress.toLowerCase()];
+    } else {
+      sql = 'DELETE FROM pnl_snapshots';
+      params = [];
+    }
+
+    const result = await this.query(sql, params);
+    return result.rowCount ?? 0;
+  }
+
+  /**
    * Get latest snapshots for all traders
    */
   async getAllLatestSnapshots(): Promise<PnLSnapshot[]> {
@@ -563,7 +582,7 @@ class PnLSnapshotService {
   async backfillTrader(address: string): Promise<{ fetched: number; inserted: number }> {
     Logger.info(`Backfilling P&L history for ${address}...`);
 
-    const history = await this.fetchHistoricalPnL(address, 'all', '1d');
+    const history = await this.fetchHistoricalPnL(address, 'all', '1h');
     Logger.info(`  Fetched ${history.length} data points from Polymarket`);
 
     const inserted = await this.insertSnapshots(address, history);

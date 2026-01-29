@@ -93,26 +93,26 @@ export function MetricsTable({ metrics }: MetricsTableProps) {
               <TableCell
                 className={cn(
                   "text-right font-mono",
-                  metric.sharpeRatio > 2
+                  metric.sharpeRatio != null && metric.sharpeRatio > 2
                     ? "text-profit"
-                    : metric.sharpeRatio < 1
+                    : metric.sharpeRatio != null && metric.sharpeRatio < 1
                     ? "text-loss"
                     : "text-foreground"
                 )}
               >
-                {metric.sharpeRatio.toFixed(2)}
+                {metric.sharpeRatio != null ? metric.sharpeRatio.toFixed(2) : "N/A"}
               </TableCell>
               <TableCell
                 className={cn(
                   "text-right font-mono",
-                  metric.sortinoRatio > 2.5
+                  metric.sortinoRatio != null && metric.sortinoRatio > 2.5
                     ? "text-profit"
-                    : metric.sortinoRatio < 1.5
+                    : metric.sortinoRatio != null && metric.sortinoRatio < 1.5
                     ? "text-loss"
                     : "text-foreground"
                 )}
               >
-                {metric.sortinoRatio.toFixed(2)}
+                {metric.sortinoRatio != null ? metric.sortinoRatio.toFixed(2) : "N/A"}
               </TableCell>
               <TableCell
                 className={cn(
@@ -129,14 +129,14 @@ export function MetricsTable({ metrics }: MetricsTableProps) {
               <TableCell
                 className={cn(
                   "text-right font-mono",
-                  metric.profitFactor > 2
+                  metric.profitFactor != null && metric.profitFactor > 2
                     ? "text-profit"
-                    : metric.profitFactor < 1.2
+                    : metric.profitFactor != null && metric.profitFactor < 1.2
                     ? "text-loss"
                     : "text-foreground"
                 )}
               >
-                {metric.profitFactor.toFixed(2)}
+                {metric.profitFactor != null ? metric.profitFactor.toFixed(2) : "N/A"}
               </TableCell>
             </TableRow>
           ))}

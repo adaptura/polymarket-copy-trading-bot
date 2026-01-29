@@ -51,12 +51,12 @@ export interface CalculatorMetrics {
   maxDrawdown: number;
   cagr: number;
   totalPnL: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
+  sharpeRatio: number | null;
+  sortinoRatio: number | null;
   winRate: number;
   avgWin: number;
   avgLoss: number;
-  profitFactor: number;
+  profitFactor: number | null;
 }
 
 export interface TraderAllocation {
@@ -64,6 +64,7 @@ export interface TraderAllocation {
   traderName: string;
   color: string;
   percentage: number;
+  totalPnl?: number;
 }
 
 export type TimeRange = "1D" | "7D" | "30D" | "90D" | "1Y" | "All";
@@ -71,18 +72,14 @@ export type TimeRange = "1D" | "7D" | "30D" | "90D" | "1Y" | "All";
 export type Resolution = "1m" | "5m" | "15m" | "1h" | "4h" | "1D";
 
 export type RollingWindow =
-  | "10m"
-  | "30m"
-  | "1h"
-  | "6h"
-  | "24h"
-  | "2d"
-  | "3d"
-  | "5d"
   | "7d"
   | "14d"
-  | "21d"
-  | "28d";
+  | "30d"
+  | "60d"
+  | "90d"
+  | "180d"
+  | "1y"
+  | "2y";
 
 export interface ActivityDataPoint {
   dayOfWeek: number; // 0-6 (Sun-Sat)

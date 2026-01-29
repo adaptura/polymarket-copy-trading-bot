@@ -3,7 +3,7 @@
 import { Slider } from "@/components/ui/slider";
 import type { TraderAllocation } from "@/types";
 import { formatCurrency } from "@/lib/mock-data";
-import { MOCK_TRADERS } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
 
 interface AllocationSlidersProps {
   allocations: TraderAllocation[];
@@ -41,12 +41,13 @@ export function AllocationSliders({
   };
 
   const handleEqualSplit = () => {
-    const activeCount = allocations.filter((a) => a.percentage > 0).length || allocations.length;
+    const activeCount =
+      allocations.filter((a) => a.percentage > 0).length || allocations.length;
     const equalShare = Math.floor(100 / activeCount);
     const remainder = 100 - equalShare * activeCount;
 
     let remainderDistributed = 0;
-    const equalized = allocations.map((a, i) => ({
+    const equalized = allocations.map((a) => ({
       ...a,
       percentage:
         a.percentage > 0 || activeCount === allocations.length
@@ -103,8 +104,8 @@ export function AllocationSliders({
       {/* Sliders */}
       <div className="space-y-5">
         {allocations.map((allocation) => {
-          const trader = MOCK_TRADERS.find((t) => t.id === allocation.traderId);
           const capitalAmount = (allocation.percentage / 100) * totalCapital;
+          const traderPnl = allocation.totalPnl ?? 0;
 
           return (
             <div key={allocation.traderId} className="space-y-2">
@@ -118,16 +119,14 @@ export function AllocationSliders({
                     }}
                   />
                   <span className="font-medium">{allocation.traderName}</span>
-                  {trader && (
-                    <span
-                      className={`text-xs font-mono ${
-                        trader.totalPnL >= 0 ? "text-profit" : "text-loss"
-                      }`}
-                    >
-                      ({trader.totalPnL >= 0 ? "+" : ""}
-                      {((trader.totalPnL / 100000) * 100).toFixed(1)}%)
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "text-xs font-mono",
+                      traderPnl >= 0 ? "text-profit" : "text-loss"
+                    )}
+                  >
+                    ({formatCurrency(traderPnl, true)})
+                  </span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-muted-foreground font-mono">

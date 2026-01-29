@@ -57,6 +57,10 @@ async function main() {
         await testPolymarketApi(arg1);
         break;
 
+      case 'clear':
+        await clearSnapshots(arg1);
+        break;
+
       default:
         console.error(`Unknown command: ${command}`);
         printUsage();
@@ -88,6 +92,8 @@ Commands:
   list                   List all tracked traders
 
   test <address>         Test Polymarket API for an address
+
+  clear [address]        Clear all snapshots (or for specific trader)
 `);
 }
 
@@ -193,6 +199,18 @@ async function listTraders() {
   }
 }
 
+async function clearSnapshots(address?: string) {
+  if (address) {
+    console.log(`\nClearing snapshots for: ${address}`);
+    const count = await pnlSnapshotService.clearSnapshots(address);
+    console.log(`Deleted ${count} snapshots`);
+  } else {
+    console.log('\nClearing ALL snapshots...');
+    const count = await pnlSnapshotService.clearSnapshots();
+    console.log(`Deleted ${count} snapshots`);
+  }
+}
+
 async function testPolymarketApi(address?: string) {
   if (!address) {
     console.error('ERROR: Address is required');
@@ -218,7 +236,7 @@ async function testPolymarketApi(address?: string) {
   // Test historical P&L API
   console.log('\n2. Testing historical P&L API (user-pnl-api.polymarket.com)...');
   try {
-    const history = await pnlSnapshotService.fetchHistoricalPnL(address, 'all', '1d');
+    const history = await pnlSnapshotService.fetchHistoricalPnL(address, 'all', '1h');
     console.log(`   ✓ Success`);
     console.log(`   Data points: ${history.length}`);
     if (history.length > 0) {

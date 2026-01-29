@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Calculator, Play, RotateCcw } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
+import { Calculator, Play, RotateCcw, Loader2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,71 +9,156 @@ import { AllocationSliders } from "@/components/calculator/AllocationSliders";
 import { WindowSelector } from "@/components/calculator/WindowSelector";
 import { MetricsTable } from "@/components/calculator/MetricsTable";
 import { StatCard } from "@/components/dashboard/StatCard";
-import {
-  MOCK_TRADERS,
-  generateCalculatorMetrics,
-  formatCurrency,
-  formatPercent,
-} from "@/lib/mock-data";
+import { useTraders } from "@/lib/hooks/use-api";
+import { formatCurrency, formatPercent } from "@/lib/mock-data";
 import type { TraderAllocation, RollingWindow, CalculatorMetrics } from "@/types";
 
-const DEFAULT_ALLOCATIONS: TraderAllocation[] = MOCK_TRADERS.slice(0, 3).map(
-  (trader, i) => ({
-    traderId: trader.id,
-    traderName: trader.name,
-    color: trader.color,
-    percentage: i === 0 ? 50 : i === 1 ? 30 : 20,
-  })
-);
-
-const DEFAULT_WINDOWS: RollingWindow[] = ["10m", "30m", "1h", "24h", "7d"];
+const DEFAULT_WINDOWS: RollingWindow[] = ["7d", "30d", "90d", "1y"];
 
 export default function CalculatorPage() {
-  const [allocations, setAllocations] =
-    useState<TraderAllocation[]>(DEFAULT_ALLOCATIONS);
+  const { traders, loading: tradersLoading } = useTraders();
+
+  const [allocations, setAllocations] = useState<TraderAllocation[]>([]);
   const [selectedWindows, setSelectedWindows] =
     useState<RollingWindow[]>(DEFAULT_WINDOWS);
-  const [delay, setDelay] = useState(1);
+  const [initialCapital, setInitialCapital] = useState(100000);
   const [metrics, setMetrics] = useState<CalculatorMetrics[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialize allocations when traders load
+  useEffect(() => {
+    if (traders.length > 0 && allocations.length === 0) {
+      const equalShare = Math.floor(100 / traders.length);
+      const remainder = 100 - equalShare * traders.length;
+
+      setAllocations(
+        traders.map((trader, i) => ({
+          traderId: trader.address,
+          traderName: trader.alias,
+          color: trader.color,
+          percentage: equalShare + (i === 0 ? remainder : 0),
+          totalPnl: trader.totalPnl,
+        }))
+      );
+    }
+  }, [traders, allocations.length]);
 
   const totalAllocation = allocations.reduce((sum, a) => sum + a.percentage, 0);
   const isValidAllocation = Math.abs(totalAllocation - 100) < 0.1;
 
-  const handleCalculate = useCallback(() => {
+  const handleCalculate = useCallback(async () => {
     if (!isValidAllocation || selectedWindows.length === 0) return;
 
     setIsCalculating(true);
+    setError(null);
 
-    // Simulate calculation delay
-    setTimeout(() => {
-      const results = generateCalculatorMetrics(
-        selectedWindows,
-        allocations.map((a) => ({ traderId: a.traderId, percentage: a.percentage }))
-      );
-      setMetrics(results);
+    try {
+      const response = await fetch("/api/calculator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allocations: allocations
+            .filter((a) => a.percentage > 0)
+            .map((a) => ({
+              traderAddress: a.traderId,
+              percentage: a.percentage,
+            })),
+          windows: selectedWindows,
+          initialCapital,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to calculate");
+      }
+
+      const data = await response.json();
+      setMetrics(data.metrics);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Calculation failed");
+      setMetrics([]);
+    } finally {
       setIsCalculating(false);
-    }, 500);
-  }, [allocations, selectedWindows, isValidAllocation]);
+    }
+  }, [allocations, selectedWindows, isValidAllocation, initialCapital]);
 
   const handleReset = () => {
-    setAllocations(DEFAULT_ALLOCATIONS);
+    if (traders.length > 0) {
+      const equalShare = Math.floor(100 / traders.length);
+      const remainder = 100 - equalShare * traders.length;
+
+      setAllocations(
+        traders.map((trader, i) => ({
+          traderId: trader.address,
+          traderName: trader.alias,
+          color: trader.color,
+          percentage: equalShare + (i === 0 ? remainder : 0),
+          totalPnl: trader.totalPnl,
+        }))
+      );
+    }
     setSelectedWindows(DEFAULT_WINDOWS);
-    setDelay(1);
+    setInitialCapital(100000);
     setMetrics([]);
+    setError(null);
   };
 
   // Calculate summary stats from results
-  const summary = metrics.length > 0
-    ? {
-        avgSharpe:
-          metrics.reduce((sum, m) => sum + m.sharpeRatio, 0) / metrics.length,
-        avgWinRate:
-          metrics.reduce((sum, m) => sum + m.winRate, 0) / metrics.length,
-        maxCagr: Math.max(...metrics.map((m) => m.cagr)),
-        minDrawdown: Math.min(...metrics.map((m) => m.maxDrawdown)),
-      }
-    : null;
+  const summary =
+    metrics.length > 0
+      ? {
+          avgSharpe:
+            metrics.filter((m) => m.sharpeRatio != null).length > 0
+              ? metrics
+                  .filter((m) => m.sharpeRatio != null)
+                  .reduce((sum, m) => sum + (m.sharpeRatio ?? 0), 0) /
+                metrics.filter((m) => m.sharpeRatio != null).length
+              : null,
+          avgWinRate:
+            metrics.reduce((sum, m) => sum + m.winRate, 0) / metrics.length,
+          maxCagr: Math.max(...metrics.map((m) => m.cagr)),
+          minDrawdown: Math.min(...metrics.map((m) => m.maxDrawdown)),
+        }
+      : null;
+
+  if (tradersLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (traders.length === 0) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 px-6 py-4">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Calculator className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold">Portfolio Calculator</h1>
+              <p className="text-sm text-muted-foreground">
+                Rolling window analysis & backtesting
+              </p>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <Users className="w-16 h-16 text-muted-foreground mb-4" />
+          <h2 className="text-xl font-semibold mb-2">No Traders Found</h2>
+          <p className="text-muted-foreground max-w-md">
+            Add some traders in the Import page first, then come back here to
+            calculate portfolio metrics.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -104,7 +189,12 @@ export default function CalculatorPage() {
             <Button
               size="sm"
               onClick={handleCalculate}
-              disabled={!isValidAllocation || selectedWindows.length === 0 || isCalculating}
+              disabled={
+                !isValidAllocation ||
+                selectedWindows.length === 0 ||
+                isCalculating ||
+                allocations.filter((a) => a.percentage > 0).length === 0
+              }
               className="gap-2"
             >
               {isCalculating ? (
@@ -119,6 +209,13 @@ export default function CalculatorPage() {
       </header>
 
       <div className="p-6 space-y-6">
+        {/* Error Message */}
+        {error && (
+          <div className="p-4 rounded-lg bg-loss/10 border border-loss/30 text-loss">
+            {error}
+          </div>
+        )}
+
         {/* Summary Cards (show only when results exist) */}
         {summary && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -129,8 +226,12 @@ export default function CalculatorPage() {
             />
             <StatCard
               title="Avg Sharpe Ratio"
-              value={summary.avgSharpe.toFixed(2)}
-              className={summary.avgSharpe > 2 ? "border-profit/30" : ""}
+              value={summary.avgSharpe?.toFixed(2) ?? "N/A"}
+              className={
+                summary.avgSharpe && summary.avgSharpe > 2
+                  ? "border-profit/30"
+                  : ""
+              }
             />
             <StatCard
               title="Avg Win Rate"
@@ -152,10 +253,11 @@ export default function CalculatorPage() {
             <AllocationSliders
               allocations={allocations}
               onChange={setAllocations}
+              totalCapital={initialCapital}
             />
           </div>
 
-          {/* Window Selector + Delay */}
+          {/* Window Selector + Settings */}
           <div className="space-y-6">
             <div className="glass-card rounded-xl p-5 border border-border/50">
               <WindowSelector
@@ -175,25 +277,30 @@ export default function CalculatorPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="delay" className="text-sm text-muted-foreground">
-                      Simulated Delay (seconds)
+                    <Label
+                      htmlFor="capital"
+                      className="text-sm text-muted-foreground"
+                    >
+                      Initial Capital ($)
                     </Label>
                     <Input
-                      id="delay"
+                      id="capital"
                       type="number"
-                      min={0}
-                      max={60}
-                      value={delay}
-                      onChange={(e) => setDelay(Number(e.target.value))}
+                      min={1000}
+                      max={10000000}
+                      step={1000}
+                      value={initialCapital}
+                      onChange={(e) => setInitialCapital(Number(e.target.value))}
                       className="bg-secondary/50 border-border"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-sm text-muted-foreground">
-                      Initial Capital
+                      Active Traders
                     </Label>
                     <div className="h-9 px-3 flex items-center rounded-md bg-secondary/30 border border-border text-muted-foreground font-mono">
-                      {formatCurrency(100000)}
+                      {allocations.filter((a) => a.percentage > 0).length} of{" "}
+                      {allocations.length}
                     </div>
                   </div>
                 </div>

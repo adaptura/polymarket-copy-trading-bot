@@ -5,18 +5,14 @@ import { cn } from "@/lib/utils";
 import type { RollingWindow } from "@/types";
 
 const ROLLING_WINDOWS: { value: RollingWindow; label: string; group: string }[] = [
-  { value: "10m", label: "10m", group: "minutes" },
-  { value: "30m", label: "30m", group: "minutes" },
-  { value: "1h", label: "1h", group: "hours" },
-  { value: "6h", label: "6h", group: "hours" },
-  { value: "24h", label: "24h", group: "hours" },
-  { value: "2d", label: "2d", group: "days" },
-  { value: "3d", label: "3d", group: "days" },
-  { value: "5d", label: "5d", group: "days" },
-  { value: "7d", label: "7d", group: "days" },
-  { value: "14d", label: "14d", group: "weeks" },
-  { value: "21d", label: "21d", group: "weeks" },
-  { value: "28d", label: "28d", group: "weeks" },
+  { value: "7d", label: "7 days", group: "short" },
+  { value: "14d", label: "14 days", group: "short" },
+  { value: "30d", label: "30 days", group: "medium" },
+  { value: "60d", label: "60 days", group: "medium" },
+  { value: "90d", label: "90 days", group: "medium" },
+  { value: "180d", label: "180 days", group: "long" },
+  { value: "1y", label: "1 year", group: "long" },
+  { value: "2y", label: "2 years", group: "long" },
 ];
 
 interface WindowSelectorProps {
@@ -59,9 +55,9 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-medium">Rolling Windows</h3>
+          <h3 className="font-medium">Analysis Windows</h3>
           <p className="text-sm text-muted-foreground">
-            Select windows to analyze
+            Select time periods to analyze
           </p>
         </div>
         <button
@@ -76,8 +72,12 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
 
       {/* Quick group selectors */}
       <div className="flex gap-2">
-        {["minutes", "hours", "days", "weeks"].map((group) => {
-          const groupWindows = ROLLING_WINDOWS.filter((w) => w.group === group);
+        {[
+          { key: "short", label: "Short-term" },
+          { key: "medium", label: "Medium-term" },
+          { key: "long", label: "Long-term" },
+        ].map(({ key, label }) => {
+          const groupWindows = ROLLING_WINDOWS.filter((w) => w.group === key);
           const selectedInGroup = groupWindows.filter((w) =>
             selected.includes(w.value)
           ).length;
@@ -85,10 +85,10 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
 
           return (
             <button
-              key={group}
-              onClick={() => handleSelectGroup(group)}
+              key={key}
+              onClick={() => handleSelectGroup(key)}
               className={cn(
-                "px-2.5 py-1 text-xs font-medium rounded-md transition-colors capitalize",
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
                 isFullySelected
                   ? "bg-primary/20 text-primary"
                   : selectedInGroup > 0
@@ -96,14 +96,14 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
                   : "bg-secondary/50 text-muted-foreground hover:bg-secondary"
               )}
             >
-              {group}
+              {label}
             </button>
           );
         })}
       </div>
 
       {/* Window grid */}
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-12 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {ROLLING_WINDOWS.map((window) => {
           const isSelected = selected.includes(window.value);
 
@@ -111,7 +111,7 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
             <label
               key={window.value}
               className={cn(
-                "relative flex items-center justify-center px-3 py-2 rounded-lg cursor-pointer",
+                "relative flex items-center justify-center px-4 py-2.5 rounded-lg cursor-pointer",
                 "transition-all duration-200 border text-center",
                 isSelected
                   ? "bg-primary/15 border-primary/30 text-primary"
@@ -123,9 +123,7 @@ export function WindowSelector({ selected, onChange }: WindowSelectorProps) {
                 onCheckedChange={() => handleToggle(window.value)}
                 className="sr-only"
               />
-              <span className="text-sm font-mono font-medium">
-                {window.label}
-              </span>
+              <span className="text-sm font-medium">{window.label}</span>
             </label>
           );
         })}

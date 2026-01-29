@@ -58,7 +58,7 @@ async function fetchCurrentPnL(address: string) {
 async function fetchHistoricalPnL(
   address: string,
   interval: "all" | "1m" = "all",
-  fidelity: "1d" | "1h" = "1d"
+  fidelity: "1d" | "1h" = "1h"
 ) {
   const url = `https://user-pnl-api.polymarket.com/user-pnl?user_address=${address}&interval=${interval}&fidelity=${fidelity}`;
 
@@ -75,7 +75,7 @@ async function fetchHistoricalPnL(
 
   return data.map((point) => ({
     time: new Date(point.t * 1000),
-    pnl: point.p / 100, // Convert from cents to dollars
+    pnl: point.p, // Already in dollars
   }));
 }
 
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       try {
         if (backfill) {
           // Backfill historical data
-          const history = await fetchHistoricalPnL(trader.address, "all", "1d");
+          const history = await fetchHistoricalPnL(trader.address, "all", "1h");
 
           let inserted = 0;
           for (const point of history) {

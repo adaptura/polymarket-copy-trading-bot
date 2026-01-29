@@ -124,6 +124,11 @@ SELECT add_retention_policy('pnl_snapshots', INTERVAL '1095 days', if_not_exists
 -- PHASE 4: HELPER FUNCTIONS
 -- ============================================================================
 
+-- Drop existing functions first (they may have different parameter names)
+DROP FUNCTION IF EXISTS generate_trader_color(text);
+DROP FUNCTION IF EXISTS get_trader_name(text);
+DROP FUNCTION IF EXISTS get_trader_color(text);
+
 -- Function to generate deterministic color from address
 CREATE OR REPLACE FUNCTION generate_trader_color(addr TEXT)
 RETURNS TEXT AS $$
