@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Time } from "lightweight-charts";
-import type { TraderPnLSeries } from "@/types";
+import type { TraderPnLSeries, RollingAnalysisResult } from "@/types";
 
 // ============================================================================
 // TYPES
@@ -258,6 +258,100 @@ export function useTakeSnapshot() {
   }, []);
 
   return { takeSnapshot, loading, error };
+}
+
+// ============================================================================
+// ROLLING ANALYSIS HOOK
+// ============================================================================
+
+interface RollingAnalysisParams {
+  allocations: { traderAddress: string; percentage: number }[];
+  window: string;
+  initialCapital?: number;
+}
+
+// ============================================================================
+// TRADER UPDATE HOOK
+// ============================================================================
+
+interface UpdateTraderParams {
+  alias?: string;
+  color?: string;
+  notes?: string;
+}
+
+export function useUpdateTrader() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const updateTrader = useCallback(async (address: string, params: UpdateTraderParams) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/traders/${address}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { updateTrader, loading, error };
+}
+
+export function useRollingAnalysis() {
+  const [data, setData] = useState<RollingAnalysisResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchRollingAnalysis = useCallback(async (params: RollingAnalysisParams) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/calculator/rolling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setData(result);
+      return result as RollingAnalysisResult;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      setError(error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+  }, []);
+
+  return { data, loading, error, fetchRollingAnalysis, reset };
 }
 
 // ============================================================================

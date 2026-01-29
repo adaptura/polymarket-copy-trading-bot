@@ -72,6 +72,13 @@ export type TimeRange = "1D" | "7D" | "30D" | "90D" | "1Y" | "All";
 export type Resolution = "1m" | "5m" | "15m" | "1h" | "4h" | "1D";
 
 export type RollingWindow =
+  | "1h"
+  | "3h"
+  | "6h"
+  | "12h"
+  | "1d"
+  | "2d"
+  | "3d"
   | "7d"
   | "14d"
   | "30d"
@@ -85,4 +92,64 @@ export interface ActivityDataPoint {
   dayOfWeek: number; // 0-6 (Sun-Sat)
   hour: number; // 0-23
   tradeCount: number;
+}
+
+// Rolling Window Analysis Types
+export interface MetricDistribution {
+  best: number;
+  worst: number;
+  average: number;
+  median: number;
+  stdDev: number;
+  percentile10: number;
+  percentile25: number;
+  percentile75: number;
+  percentile90: number;
+  bestPeriodStart: string;
+  bestPeriodEnd: string;
+  worstPeriodStart: string;
+  worstPeriodEnd: string;
+}
+
+export interface TraderTimeline {
+  traderId: string;
+  traderName: string;
+  color: string;
+  firstDataDate: string;
+  lastDataDate: string;
+  percentage: number;
+}
+
+export interface IndividualTraderSeries {
+  traderId: string;
+  traderName: string;
+  color: string;
+  data: RollingTimeSeries[];
+}
+
+export interface RollingAnalysisResult {
+  window: string;
+  sampleCount: number;
+  sharpeRatio: MetricDistribution;
+  maxDrawdown: MetricDistribution;
+  totalReturn: MetricDistribution;
+  winRate: MetricDistribution;
+  sortinoRatio: MetricDistribution;
+  cagr: MetricDistribution;
+  cagrMaxDdRatio: MetricDistribution;
+  timeSeries: RollingTimeSeries[];
+  traderTimelines: TraderTimeline[];
+  individualTraderSeries: IndividualTraderSeries[];
+}
+
+export interface RollingTimeSeries {
+  endDate: string;
+  startDate: string;
+  sharpe: number | null;
+  drawdown: number;
+  returnPct: number;
+  winRate: number;
+  sortino: number | null;
+  cagr: number;
+  cagrMaxDdRatio: number | null;
 }

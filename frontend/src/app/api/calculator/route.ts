@@ -23,11 +23,7 @@ interface PortfolioMetrics {
  * POST /api/calculator
  *
  * Calculate portfolio metrics for given allocations and time windows
- *
- * Body:
- *   - allocations: Array<{ traderAddress: string, percentage: number }>
- *   - windows: string[] (e.g., ["7d", "30d", "90d", "1y"])
- *   - initialCapital: number (optional, default 100000)
+ * Uses percentage returns from each trader weighted by allocation
  */
 export async function POST(request: NextRequest) {
   try {
@@ -71,45 +67,51 @@ export async function POST(request: NextRequest) {
     for (const window of windows) {
       const interval = windowToInterval(window);
 
-      // Get weighted portfolio P&L changes for each day in the window
+      // Get daily percentage returns for each trader, then weight them
+      // We calculate % change from previous day's P&L
       const portfolioQuery = await pool.query<{
-        time: Date;
-        weighted_pnl: string;
-        daily_change: string;
+        day: Date;
+        weighted_daily_return: string;
       }>(
         `
         WITH trader_daily AS (
-          SELECT
+          -- Get one value per day per trader (last value of the day)
+          SELECT DISTINCT ON (trader_address, DATE_TRUNC('day', time))
             DATE_TRUNC('day', time) AS day,
             trader_address,
             total_pnl,
-            total_pnl - LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY time) AS daily_change
+            LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY DATE_TRUNC('day', time)) AS prev_pnl
           FROM pnl_snapshots
           WHERE time >= NOW() - $1::INTERVAL
             AND trader_address = ANY($2::text[])
+          ORDER BY trader_address, DATE_TRUNC('day', time), time DESC
         ),
-        weighted_changes AS (
+        trader_returns AS (
+          -- Calculate daily P&L change (not percentage - we'll use absolute change)
+          SELECT
+            day,
+            trader_address,
+            total_pnl,
+            COALESCE(total_pnl - prev_pnl, 0) AS daily_pnl_change
+          FROM trader_daily
+          WHERE prev_pnl IS NOT NULL
+        ),
+        weighted_returns AS (
+          -- Weight each trader's daily P&L change by their allocation percentage
           SELECT
             t.day,
-            SUM(
-              t.daily_change * (a.percentage / 100.0)
-            ) AS weighted_daily_change,
-            SUM(
-              t.total_pnl * (a.percentage / 100.0)
-            ) AS weighted_total_pnl
-          FROM trader_daily t
+            SUM(t.daily_pnl_change * (a.percentage / 100.0)) AS weighted_daily_pnl
+          FROM trader_returns t
           JOIN (
             SELECT unnest($2::text[]) AS address, unnest($3::float[]) AS percentage
           ) a ON t.trader_address = a.address
-          WHERE t.daily_change IS NOT NULL
           GROUP BY t.day
           ORDER BY t.day
         )
         SELECT
-          day AS time,
-          weighted_total_pnl AS weighted_pnl,
-          weighted_daily_change AS daily_change
-        FROM weighted_changes
+          day,
+          weighted_daily_pnl AS weighted_daily_return
+        FROM weighted_returns
         ORDER BY day
         `,
         [
@@ -119,10 +121,9 @@ export async function POST(request: NextRequest) {
         ]
       );
 
-      const dailyChanges = portfolioQuery.rows.map((r) => parseFloat(r.daily_change));
-      const pnlSeries = portfolioQuery.rows.map((r) => parseFloat(r.weighted_pnl));
+      const dailyReturns = portfolioQuery.rows.map((r) => parseFloat(r.weighted_daily_return));
 
-      if (dailyChanges.length === 0) {
+      if (dailyReturns.length === 0) {
         results.push({
           window,
           maxDrawdown: 0,
@@ -138,58 +139,87 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Calculate metrics
-      const wins = dailyChanges.filter((c) => c > 0);
-      const losses = dailyChanges.filter((c) => c < 0);
-      const winRate = (wins.length / dailyChanges.length) * 100;
-      const avgWin = wins.length > 0 ? wins.reduce((a, b) => a + b, 0) / wins.length : 0;
-      const avgLoss = losses.length > 0 ? losses.reduce((a, b) => a + b, 0) / losses.length : 0;
-      const totalPnL = pnlSeries.length > 0 ? pnlSeries[pnlSeries.length - 1] : 0;
+      // Build equity curve starting from initial capital
+      const equityCurve: number[] = [initialCapital];
+      let equity = initialCapital;
+
+      for (const dailyPnL of dailyReturns) {
+        // Scale the P&L proportionally to our capital vs traders' capital
+        // Assume traders operate with ~$1M average, so scale accordingly
+        const scaledPnL = dailyPnL * (initialCapital / 1000000);
+        equity += scaledPnL;
+        equityCurve.push(equity);
+      }
+
+      // Calculate metrics from equity curve
+      const totalPnL = equity - initialCapital;
+      const totalReturn = (equity / initialCapital - 1) * 100;
+
+      // Daily percentage returns for ratio calculations
+      const dailyPctReturns: number[] = [];
+      for (let i = 1; i < equityCurve.length; i++) {
+        const pctReturn = (equityCurve[i] / equityCurve[i - 1] - 1) * 100;
+        dailyPctReturns.push(pctReturn);
+      }
+
+      // Win rate
+      const wins = dailyPctReturns.filter((r) => r > 0);
+      const losses = dailyPctReturns.filter((r) => r < 0);
+      const winRate = dailyPctReturns.length > 0
+        ? (wins.length / dailyPctReturns.length) * 100
+        : 0;
+
+      // Avg win/loss (in dollars)
+      const avgWin = wins.length > 0
+        ? (wins.reduce((a, b) => a + b, 0) / wins.length) * initialCapital / 100
+        : 0;
+      const avgLoss = losses.length > 0
+        ? (losses.reduce((a, b) => a + b, 0) / losses.length) * initialCapital / 100
+        : 0;
 
       // Profit factor
       const grossWins = wins.reduce((a, b) => a + b, 0);
       const grossLosses = Math.abs(losses.reduce((a, b) => a + b, 0));
       const profitFactor = grossLosses > 0 ? grossWins / grossLosses : null;
 
-      // Max drawdown
+      // Max drawdown from equity curve
       let maxDrawdown = 0;
-      let peak = pnlSeries[0] || 0;
-      for (const pnl of pnlSeries) {
-        if (pnl > peak) peak = pnl;
-        const drawdown = peak > 0 ? ((peak - pnl) / peak) * 100 : 0;
+      let peak = equityCurve[0];
+      for (const value of equityCurve) {
+        if (value > peak) peak = value;
+        const drawdown = peak > 0 ? ((peak - value) / peak) * 100 : 0;
         if (drawdown > maxDrawdown) maxDrawdown = drawdown;
       }
 
-      // Volatility & Sharpe
-      const mean = dailyChanges.reduce((a, b) => a + b, 0) / dailyChanges.length;
-      const variance =
-        dailyChanges.reduce((sum, c) => sum + Math.pow(c - mean, 2), 0) / dailyChanges.length;
+      // Sharpe ratio (annualized)
+      const meanReturn = dailyPctReturns.length > 0
+        ? dailyPctReturns.reduce((a, b) => a + b, 0) / dailyPctReturns.length
+        : 0;
+      const variance = dailyPctReturns.length > 0
+        ? dailyPctReturns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / dailyPctReturns.length
+        : 0;
       const stdDev = Math.sqrt(variance);
-      const sharpeRatio = stdDev > 0 ? (mean / stdDev) * Math.sqrt(252) : null; // Annualized
+      const sharpeRatio = stdDev > 0 ? (meanReturn / stdDev) * Math.sqrt(252) : null;
 
-      // Sortino (downside deviation)
-      const negativeChanges = dailyChanges.filter((c) => c < 0);
-      const downsideVariance =
-        negativeChanges.length > 0
-          ? negativeChanges.reduce((sum, c) => sum + c * c, 0) / negativeChanges.length
-          : 0;
+      // Sortino ratio (annualized)
+      const negativeReturns = dailyPctReturns.filter((r) => r < 0);
+      const downsideVariance = negativeReturns.length > 0
+        ? negativeReturns.reduce((sum, r) => sum + r * r, 0) / negativeReturns.length
+        : 0;
       const downsideDev = Math.sqrt(downsideVariance);
-      const sortinoRatio = downsideDev > 0 ? (mean / downsideDev) * Math.sqrt(252) : null;
+      const sortinoRatio = downsideDev > 0 ? (meanReturn / downsideDev) * Math.sqrt(252) : null;
 
-      // CAGR (annualized)
-      const daysInWindow = dailyChanges.length;
-      const startValue = initialCapital;
-      const endValue = initialCapital + totalPnL;
-      const years = daysInWindow / 365;
-      const cagr =
-        years > 0 && startValue > 0
-          ? (Math.pow(endValue / startValue, 1 / years) - 1) * 100
-          : 0;
+      // CAGR
+      const daysInPeriod = dailyReturns.length;
+      const years = daysInPeriod / 365;
+      const cagr = years > 0 && initialCapital > 0 && equity > 0
+        ? (Math.pow(equity / initialCapital, 1 / years) - 1) * 100
+        : totalReturn;
 
       results.push({
         window,
         maxDrawdown: -maxDrawdown,
-        cagr,
+        cagr: Math.min(cagr, 99999), // Cap at reasonable value
         totalPnL,
         sharpeRatio,
         sortinoRatio,

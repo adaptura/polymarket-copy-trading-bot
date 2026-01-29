@@ -157,6 +157,18 @@ export async function deleteTraderAlias(address: string): Promise<boolean> {
 // TRADER QUERIES (using P&L snapshots)
 // ============================================================================
 
+// Trader color palette - must match TRADER_COLORS in mock-data.ts
+const TRADER_COLOR_PALETTE = [
+  "#00D9FF", // Cyan
+  "#22C55E", // Emerald
+  "#A855F7", // Violet
+  "#F59E0B", // Amber
+  "#FF6B6B", // Coral
+  "#EC4899", // Pink
+  "#3B82F6", // Blue
+  "#14B8A6", // Teal
+];
+
 /**
  * Get all traders with summary statistics from P&L snapshots
  */
@@ -164,24 +176,26 @@ export async function getAllTraders(): Promise<TraderSummary[]> {
   const result = await pool.query<{
     address: string;
     alias: string;
-    color: string;
+    color: string | null;
     total_pnl: string | null;
     realized_pnl: string | null;
     unrealized_pnl: string | null;
     position_count: number | null;
     last_updated: Date | null;
     is_active: boolean;
+    row_num: string;
   }>(`
     SELECT
       t.address,
       t.alias,
-      COALESCE(t.color, '#10b981') AS color,
+      t.color,
       lp.total_pnl,
       lp.realized_pnl,
       lp.unrealized_pnl,
       lp.position_count,
       lp.time AS last_updated,
-      t.is_active
+      t.is_active,
+      ROW_NUMBER() OVER (ORDER BY t.created_at) AS row_num
     FROM tracked_traders t
     LEFT JOIN LATERAL (
       SELECT total_pnl, realized_pnl, unrealized_pnl, position_count, time
@@ -194,17 +208,23 @@ export async function getAllTraders(): Promise<TraderSummary[]> {
     ORDER BY COALESCE(lp.total_pnl, 0) DESC
   `);
 
-  return result.rows.map((row) => ({
-    address: row.address,
-    alias: row.alias,
-    color: row.color,
-    totalPnl: Number.parseFloat(row.total_pnl ?? "0") || 0,
-    realizedPnl: Number.parseFloat(row.realized_pnl ?? "0") || 0,
-    unrealizedPnl: Number.parseFloat(row.unrealized_pnl ?? "0") || 0,
-    positionCount: row.position_count ?? 0,
-    lastUpdated: row.last_updated,
-    isActive: row.is_active,
-  }));
+  return result.rows.map((row) => {
+    // Use stored color or assign from palette based on row number
+    const rowIndex = parseInt(row.row_num, 10) - 1;
+    const defaultColor = TRADER_COLOR_PALETTE[rowIndex % TRADER_COLOR_PALETTE.length];
+
+    return {
+      address: row.address,
+      alias: row.alias,
+      color: row.color || defaultColor,
+      totalPnl: Number.parseFloat(row.total_pnl ?? "0") || 0,
+      realizedPnl: Number.parseFloat(row.realized_pnl ?? "0") || 0,
+      unrealizedPnl: Number.parseFloat(row.unrealized_pnl ?? "0") || 0,
+      positionCount: row.position_count ?? 0,
+      lastUpdated: row.last_updated,
+      isActive: row.is_active,
+    };
+  });
 }
 
 /**
@@ -214,26 +234,33 @@ export async function getTrader(address: string): Promise<TraderSummary | null> 
   const result = await pool.query<{
     address: string;
     alias: string;
-    color: string;
+    color: string | null;
     total_pnl: string | null;
     realized_pnl: string | null;
     unrealized_pnl: string | null;
     position_count: number | null;
     last_updated: Date | null;
     is_active: boolean;
+    row_num: string;
   }>(
     `
+    WITH numbered_traders AS (
+      SELECT address, ROW_NUMBER() OVER (ORDER BY created_at) AS row_num
+      FROM tracked_traders
+    )
     SELECT
       t.address,
       t.alias,
-      COALESCE(t.color, '#10b981') AS color,
+      t.color,
       lp.total_pnl,
       lp.realized_pnl,
       lp.unrealized_pnl,
       lp.position_count,
       lp.time AS last_updated,
-      t.is_active
+      t.is_active,
+      nt.row_num
     FROM tracked_traders t
+    JOIN numbered_traders nt ON t.address = nt.address
     LEFT JOIN LATERAL (
       SELECT total_pnl, realized_pnl, unrealized_pnl, position_count, time
       FROM pnl_snapshots
@@ -249,10 +276,14 @@ export async function getTrader(address: string): Promise<TraderSummary | null> 
   if (result.rows.length === 0) return null;
 
   const row = result.rows[0];
+  // Use stored color or assign from palette based on row number
+  const rowIndex = parseInt(row.row_num, 10) - 1;
+  const defaultColor = TRADER_COLOR_PALETTE[rowIndex % TRADER_COLOR_PALETTE.length];
+
   return {
     address: row.address,
     alias: row.alias,
-    color: row.color,
+    color: row.color || defaultColor,
     totalPnl: Number.parseFloat(row.total_pnl ?? "0") || 0,
     realizedPnl: Number.parseFloat(row.realized_pnl ?? "0") || 0,
     unrealizedPnl: Number.parseFloat(row.unrealized_pnl ?? "0") || 0,
@@ -325,12 +356,17 @@ export async function getMultiTraderPnLSeries(
   const result = await pool.query<{
     trader_address: string;
     trader_name: string;
-    color: string;
+    color: string | null;
+    row_num: string;
     time: string;
     total_pnl: string;
   }>(
     `
-    WITH bucketed AS (
+    WITH numbered_traders AS (
+      SELECT address, ROW_NUMBER() OVER (ORDER BY created_at) AS row_num
+      FROM tracked_traders
+    ),
+    bucketed AS (
       SELECT
         s.trader_address,
         time_bucket($4::INTERVAL, s.time) AS bucket,
@@ -344,11 +380,13 @@ export async function getMultiTraderPnLSeries(
     SELECT
       b.trader_address,
       t.alias AS trader_name,
-      COALESCE(t.color, '#10b981') AS color,
+      t.color,
+      nt.row_num,
       EXTRACT(EPOCH FROM b.bucket)::bigint AS time,
       b.total_pnl
     FROM bucketed b
     JOIN tracked_traders t ON b.trader_address = t.address
+    JOIN numbered_traders nt ON t.address = nt.address
     ORDER BY b.trader_address, b.bucket
   `,
     [addresses.map((a) => a.toLowerCase()), startDate, endDate, interval]
@@ -359,10 +397,14 @@ export async function getMultiTraderPnLSeries(
 
   for (const row of result.rows) {
     if (!seriesMap.has(row.trader_address)) {
+      // Use stored color or assign from palette based on row number
+      const rowIndex = parseInt(row.row_num, 10) - 1;
+      const defaultColor = TRADER_COLOR_PALETTE[rowIndex % TRADER_COLOR_PALETTE.length];
+
       seriesMap.set(row.trader_address, {
         traderId: row.trader_address,
         traderName: row.trader_name,
-        color: row.color,
+        color: row.color || defaultColor,
         data: [],
       });
     }

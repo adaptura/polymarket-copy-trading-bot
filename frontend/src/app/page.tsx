@@ -7,6 +7,7 @@ import { TraderSelector } from "@/components/dashboard/TraderSelector";
 import { TimeRangeSelector } from "@/components/dashboard/TimeRangeSelector";
 import { ResolutionSelector } from "@/components/dashboard/ResolutionSelector";
 import { StatCard } from "@/components/dashboard/StatCard";
+import { EditTraderDialog } from "@/components/dashboard/EditTraderDialog";
 import {
   useTraders,
   useMultiTraderPnL,
@@ -14,14 +15,16 @@ import {
   toUITrader,
 } from "@/lib/hooks/use-api";
 import { formatCurrency } from "@/lib/mock-data";
-import type { TimeRange, Resolution } from "@/types";
+import type { TimeRange, Resolution, Trader } from "@/types";
 import Link from "next/link";
 
 export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
   const [selectedTraders, setSelectedTraders] = useState<string[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRange>("30D");
+  const [timeRange, setTimeRange] = useState<TimeRange>("All");
   const [resolution, setResolution] = useState<Resolution>("1D");
+  const [editingTrader, setEditingTrader] = useState<Trader | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   // Store current time in a ref to avoid impure Date calls during render
   const nowRef = useRef(Date.now());
@@ -116,6 +119,16 @@ export default function Dashboard() {
     } catch (error) {
       console.error("Failed to take snapshot:", error);
     }
+  };
+
+  // Handle edit trader
+  const handleEditTrader = (trader: Trader) => {
+    setEditingTrader(trader);
+    setEditDialogOpen(true);
+  };
+
+  const handleEditSuccess = () => {
+    refetchTraders();
   };
 
   return (
@@ -219,6 +232,7 @@ export default function Dashboard() {
               traders={uiTraders}
               selectedIds={selectedTraders}
               onSelectionChange={setSelectedTraders}
+              onEditTrader={handleEditTrader}
             />
           )}
         </div>
@@ -235,26 +249,26 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center gap-2">
               <ResolutionSelector value={resolution} onChange={setResolution} />
-              <button className="p-2 rounded-lg hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground">
-                <Maximize2 className="w-4 h-4" />
+              <button className="p-2.5 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground border border-border/50">
+                <Maximize2 className="w-5 h-5" />
               </button>
             </div>
           </div>
 
           <div className="p-4">
             {!mounted ? (
-              <div className="h-[450px] flex items-center justify-center text-muted-foreground">
+              <div className="h-[550px] flex items-center justify-center text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                   Loading chart...
                 </div>
               </div>
             ) : isLoading ? (
-              <div className="h-[450px] flex items-center justify-center text-muted-foreground">
+              <div className="h-[550px] flex items-center justify-center text-muted-foreground">
                 <Loader2 className="w-6 h-6 animate-spin" />
               </div>
             ) : pnlSeries.length === 0 ? (
-              <div className="h-[450px] flex items-center justify-center text-muted-foreground">
+              <div className="h-[550px] flex items-center justify-center text-muted-foreground">
                 {selectedTraders.length === 0
                   ? "Select at least one trader to view the chart"
                   : "No P&L data available. Run backfill to import historical data."}
@@ -263,7 +277,7 @@ export default function Dashboard() {
               <MultiLineChart
                 series={pnlSeries}
                 volumeSeries={[]}
-                height={450}
+                height={550}
               />
             )}
           </div>
@@ -349,6 +363,14 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Edit Trader Dialog */}
+      <EditTraderDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        trader={editingTrader}
+        onSuccess={handleEditSuccess}
+      />
     </div>
   );
 }

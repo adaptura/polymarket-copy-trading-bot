@@ -1,7 +1,7 @@
 "use client";
 
 import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
+import { Pencil } from "lucide-react";
 import type { Trader } from "@/types";
 import { formatCurrency } from "@/lib/mock-data";
 
@@ -9,12 +9,14 @@ interface TraderSelectorProps {
   traders: Trader[];
   selectedIds: string[];
   onSelectionChange: (ids: string[]) => void;
+  onEditTrader?: (trader: Trader) => void;
 }
 
 export function TraderSelector({
   traders,
   selectedIds,
   onSelectionChange,
+  onEditTrader,
 }: TraderSelectorProps) {
   const handleToggle = (traderId: string) => {
     if (selectedIds.includes(traderId)) {
@@ -52,10 +54,10 @@ export function TraderSelector({
           const pnlColor = trader.totalPnL >= 0 ? "text-profit" : "text-loss";
 
           return (
-            <label
+            <div
               key={trader.id}
               className={`
-                group relative flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer
+                group relative flex items-center gap-2.5 px-3 py-2 rounded-lg
                 transition-all duration-200 border
                 ${
                   isSelected
@@ -64,37 +66,53 @@ export function TraderSelector({
                 }
               `}
             >
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={() => handleToggle(trader.id)}
-                className="sr-only"
-              />
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => handleToggle(trader.id)}
+                  className="sr-only"
+                />
 
-              {/* Color indicator */}
-              <div
-                className="w-2.5 h-2.5 rounded-full transition-transform duration-200"
-                style={{
-                  backgroundColor: trader.color,
-                  boxShadow: isSelected
-                    ? `0 0 8px ${trader.color}`
-                    : "none",
-                  transform: isSelected ? "scale(1.2)" : "scale(1)",
-                }}
-              />
+                {/* Color indicator */}
+                <div
+                  className="w-2.5 h-2.5 rounded-full transition-transform duration-200"
+                  style={{
+                    backgroundColor: trader.color,
+                    boxShadow: isSelected
+                      ? `0 0 8px ${trader.color}`
+                      : "none",
+                    transform: isSelected ? "scale(1.2)" : "scale(1)",
+                  }}
+                />
 
-              {/* Trader info */}
-              <div className="flex flex-col">
-                <span
-                  className={`text-sm font-medium transition-colors ${
-                    isSelected ? "text-foreground" : "text-muted-foreground"
-                  }`}
+                {/* Trader info */}
+                <div className="flex flex-col">
+                  <span
+                    className={`text-sm font-medium transition-colors ${
+                      isSelected ? "text-foreground" : "text-muted-foreground"
+                    }`}
+                  >
+                    {trader.name}
+                  </span>
+                  <span className={`text-xs font-mono ${pnlColor}`}>
+                    {formatCurrency(trader.totalPnL, true)}
+                  </span>
+                </div>
+              </label>
+
+              {/* Edit button */}
+              {onEditTrader && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditTrader(trader);
+                  }}
+                  className="p-1 rounded hover:bg-secondary transition-colors opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
+                  title="Edit trader"
                 >
-                  {trader.name}
-                </span>
-                <span className={`text-xs font-mono ${pnlColor}`}>
-                  {formatCurrency(trader.totalPnL, true)}
-                </span>
-              </div>
+                  <Pencil className="w-3 h-3" />
+                </button>
+              )}
 
               {/* Selection indicator */}
               {isSelected && (
@@ -105,7 +123,7 @@ export function TraderSelector({
                   }}
                 />
               )}
-            </label>
+            </div>
           );
         })}
       </div>
