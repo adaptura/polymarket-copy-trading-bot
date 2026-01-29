@@ -14,6 +14,8 @@ import type {
   HistogramData,
   Time,
 } from "lightweight-charts";
+import { getChartColors } from "@/lib/chart-colors";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 export interface OHLCData {
   time: Time;
@@ -34,8 +36,6 @@ interface CandlestickChartProps {
   volumeData?: VolumeData[];
   height?: number;
   colors?: {
-    background?: string;
-    textColor?: string;
     upColor?: string;
     downColor?: string;
     wickUpColor?: string;
@@ -45,9 +45,7 @@ interface CandlestickChartProps {
   };
 }
 
-const defaultColors = {
-  background: "#0a0a0a",
-  textColor: "#d1d5db",
+const defaultCandleColors = {
   upColor: "#22c55e",
   downColor: "#ef4444",
   wickUpColor: "#22c55e",
@@ -62,24 +60,28 @@ export function CandlestickChart({
   height = 400,
   colors = {},
 }: CandlestickChartProps) {
+  const { theme } = useTheme();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
-  const mergedColors = { ...defaultColors, ...colors };
+  const candleColors = { ...defaultCandleColors, ...colors };
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const chartColors = getChartColors(theme === "dark");
+
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: mergedColors.background },
-        textColor: mergedColors.textColor,
+        background: { type: ColorType.Solid, color: chartColors.background },
+        textColor: chartColors.textMuted,
+        fontFamily: "var(--font-geist-mono)",
       },
       grid: {
-        vertLines: { color: "rgba(255, 255, 255, 0.1)" },
-        horzLines: { color: "rgba(255, 255, 255, 0.1)" },
+        vertLines: { color: chartColors.gridLine },
+        horzLines: { color: chartColors.gridLine },
       },
       width: chartContainerRef.current.clientWidth,
       height: height,
@@ -87,22 +89,24 @@ export function CandlestickChart({
         mode: 1,
         vertLine: {
           width: 1,
-          color: "rgba(255, 255, 255, 0.4)",
+          color: chartColors.crosshair,
           style: 0,
+          labelBackgroundColor: chartColors.labelBg,
         },
         horzLine: {
           width: 1,
-          color: "rgba(255, 255, 255, 0.4)",
+          color: chartColors.crosshair,
           style: 0,
+          labelBackgroundColor: chartColors.labelBg,
         },
       },
       timeScale: {
-        borderColor: "rgba(255, 255, 255, 0.2)",
+        borderColor: chartColors.border,
         timeVisible: true,
         secondsVisible: false,
       },
       rightPriceScale: {
-        borderColor: "rgba(255, 255, 255, 0.2)",
+        borderColor: chartColors.border,
       },
     });
 
@@ -110,11 +114,11 @@ export function CandlestickChart({
 
     // Add candlestick series (v5 API)
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: mergedColors.upColor,
-      downColor: mergedColors.downColor,
+      upColor: candleColors.upColor,
+      downColor: candleColors.downColor,
       borderVisible: false,
-      wickUpColor: mergedColors.wickUpColor,
-      wickDownColor: mergedColors.wickDownColor,
+      wickUpColor: candleColors.wickUpColor,
+      wickDownColor: candleColors.wickDownColor,
     });
 
     candlestickSeriesRef.current = candlestickSeries;
@@ -123,7 +127,7 @@ export function CandlestickChart({
     // Add volume series if provided
     if (volumeData && volumeData.length > 0) {
       const volumeSeries = chart.addSeries(HistogramSeries, {
-        color: mergedColors.volumeUp,
+        color: candleColors.volumeUp,
         priceFormat: {
           type: "volume",
         },
@@ -142,9 +146,9 @@ export function CandlestickChart({
         color:
           i > 0 && data[i] && data[i - 1]
             ? data[i].close >= data[i - 1].close
-              ? mergedColors.volumeUp
-              : mergedColors.volumeDown
-            : mergedColors.volumeUp,
+              ? candleColors.volumeUp
+              : candleColors.volumeDown
+            : candleColors.volumeUp,
       }));
 
       volumeSeriesRef.current = volumeSeries;
@@ -167,7 +171,7 @@ export function CandlestickChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, volumeData, height, mergedColors]);
+  }, [data, volumeData, height, candleColors, theme]);
 
   return <div ref={chartContainerRef} className="w-full" />;
 }

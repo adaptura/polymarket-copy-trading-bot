@@ -13,6 +13,8 @@ import type {
   LineData,
   Time,
 } from "lightweight-charts";
+import { getChartColors } from "@/lib/chart-colors";
+import { useTheme } from "@/components/providers/ThemeProvider";
 
 export interface PriceData {
   time: Time;
@@ -26,10 +28,6 @@ interface PriceLineChartProps {
   areaTopColor?: string;
   areaBottomColor?: string;
   showArea?: boolean;
-  colors?: {
-    background?: string;
-    textColor?: string;
-  };
 }
 
 export function PriceLineChart({
@@ -39,38 +37,50 @@ export function PriceLineChart({
   areaTopColor = "rgba(59, 130, 246, 0.4)",
   areaBottomColor = "rgba(59, 130, 246, 0.0)",
   showArea = true,
-  colors = {},
 }: PriceLineChartProps) {
+  const { theme } = useTheme();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Area"> | ISeriesApi<"Line"> | null>(null);
 
-  const backgroundColor = colors.background ?? "#0a0a0a";
-  const textColor = colors.textColor ?? "#d1d5db";
-
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    const colors = getChartColors(theme === "dark");
+
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: backgroundColor },
-        textColor: textColor,
+        background: { type: ColorType.Solid, color: colors.background },
+        textColor: colors.textMuted,
+        fontFamily: "var(--font-geist-mono)",
       },
       grid: {
-        vertLines: { color: "rgba(255, 255, 255, 0.1)" },
-        horzLines: { color: "rgba(255, 255, 255, 0.1)" },
+        vertLines: { color: colors.gridLine },
+        horzLines: { color: colors.gridLine },
       },
       width: chartContainerRef.current.clientWidth,
       height: height,
       crosshair: {
         mode: 1,
+        vertLine: {
+          width: 1,
+          color: colors.crosshair,
+          style: 0,
+          labelBackgroundColor: colors.labelBg,
+        },
+        horzLine: {
+          width: 1,
+          color: colors.crosshair,
+          style: 0,
+          labelBackgroundColor: colors.labelBg,
+        },
       },
       timeScale: {
-        borderColor: "rgba(255, 255, 255, 0.2)",
+        borderColor: colors.border,
         timeVisible: true,
       },
       rightPriceScale: {
-        borderColor: "rgba(255, 255, 255, 0.2)",
+        borderColor: colors.border,
       },
     });
 
@@ -108,7 +118,7 @@ export function PriceLineChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, height, lineColor, areaTopColor, areaBottomColor, showArea, backgroundColor, textColor]);
+  }, [data, height, lineColor, areaTopColor, areaBottomColor, showArea, theme]);
 
   return <div ref={chartContainerRef} className="w-full" />;
 }
