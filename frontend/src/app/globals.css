@@ -103,23 +103,23 @@
 
 /* Dark mode */
 .dark {
-  --background: oklch(0.08 0.01 260);
+  --background: oklch(0.1 0 0);
   --foreground: oklch(0.95 0 0);
-  --card: oklch(0.12 0.01 260);
+  --card: oklch(0.18 0 0);
   --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.12 0.01 260);
+  --popover: oklch(0.18 0 0);
   --popover-foreground: oklch(0.95 0 0);
   --primary: oklch(0.75 0.18 195);
   --primary-foreground: oklch(0.1 0 0);
-  --secondary: oklch(0.18 0.01 260);
+  --secondary: oklch(0.22 0 0);
   --secondary-foreground: oklch(0.9 0 0);
-  --muted: oklch(0.18 0.01 260);
+  --muted: oklch(0.22 0 0);
   --muted-foreground: oklch(0.6 0 0);
   --accent: oklch(0.75 0.18 195);
   --accent-foreground: oklch(0.1 0 0);
   --destructive: oklch(0.65 0.2 25);
-  --border: oklch(0.25 0.01 260);
-  --input: oklch(0.18 0.01 260);
+  --border: oklch(0.28 0 0);
+  --input: oklch(0.22 0 0);
   --ring: oklch(0.75 0.18 195);
 
   /* Chart colors - vibrant trader palette */
@@ -130,22 +130,22 @@
   --chart-5: oklch(0.7 0.2 25);    /* Coral */
 
   /* Sidebar - dark */
-  --sidebar: oklch(0.1 0.01 260);
+  --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.85 0 0);
   --sidebar-primary: oklch(0.75 0.18 195);
   --sidebar-primary-foreground: oklch(0.1 0 0);
-  --sidebar-accent: oklch(0.18 0.02 260);
+  --sidebar-accent: oklch(0.2 0 0);
   --sidebar-accent-foreground: oklch(0.95 0 0);
-  --sidebar-border: oklch(0.2 0.01 260);
+  --sidebar-border: oklch(0.24 0 0);
   --sidebar-ring: oklch(0.75 0.18 195);
 
   /* Trading specific */
   --profit: oklch(0.72 0.19 155);
   --loss: oklch(0.65 0.2 25);
   --cyan-accent: oklch(0.75 0.18 195);
-  --surface-1: oklch(0.1 0.01 260);
-  --surface-2: oklch(0.13 0.01 260);
-  --surface-3: oklch(0.16 0.01 260);
+  --surface-1: oklch(0.12 0 0);
+  --surface-2: oklch(0.16 0 0);
+  --surface-3: oklch(0.2 0 0);
 }
 
 @layer base {
@@ -199,10 +199,10 @@
 .dark .glass-card {
   background: linear-gradient(
     135deg,
-    oklch(0.14 0.01 260 / 0.9) 0%,
-    oklch(0.1 0.01 260 / 0.8) 100%
+    oklch(0.2 0 0 / 0.95) 0%,
+    oklch(0.16 0 0 / 0.9) 100%
   );
-  border: 1px solid oklch(1 0 0 / 0.08);
+  border: 1px solid oklch(1 0 0 / 0.1);
 }
 
 /* Subtle noise texture overlay */
@@ -337,6 +337,6 @@
 
 .dark {
   --chart-text: #888888;
-  --chart-grid: #2a2a35;
-  --chart-border: #353545;
+  --chart-grid: #333333;
+  --chart-border: #404040;
 }

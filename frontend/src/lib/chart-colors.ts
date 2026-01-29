@@ -5,11 +5,11 @@ export function getChartColors(isDark: boolean) {
   if (isDark) {
     return {
       textMuted: "#888888",
-      gridLine: "#2a2a35",
-      crosshair: "#555555",
-      labelBg: "#252530",
-      border: "#353545",
-      cardBg: "#1a1a24",
+      gridLine: "#333333",
+      crosshair: "#666666",
+      labelBg: "#2a2a2a",
+      border: "#404040",
+      cardBg: "#1f1f1f",
       background: "transparent",
     };
   }
