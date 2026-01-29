@@ -275,6 +275,13 @@ export const stopTradeExecutor = () => {
 };
 
 const tradeExecutor = async (clobClient: ClobClient) => {
+    // Skip trade execution in analysis mode
+    if (ENV.ANALYSIS_MODE) {
+        Logger.success('Trade executor disabled (ANALYSIS_MODE=true)');
+        Logger.info('Trades are being recorded to TimescaleDB for analysis only');
+        return;
+    }
+
     Logger.success(`Trade executor ready for ${USER_ADDRESSES.length} trader(s)`);
     if (TRADE_AGGREGATION_ENABLED) {
         Logger.info(

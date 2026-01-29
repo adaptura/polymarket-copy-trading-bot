@@ -1,0 +1,21 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.23.0-pg17
+    container_name: polymarket_timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-postgres}
+      POSTGRES_USER: ${TIMESCALE_USER:-postgres}
+      POSTGRES_DB: polymarket_analytics
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  timescale_data:

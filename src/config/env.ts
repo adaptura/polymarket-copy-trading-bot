@@ -348,4 +348,8 @@ export const ENV = {
     MONGO_URI: process.env.MONGO_URI as string,
     RPC_URL: process.env.RPC_URL as string,
     USDC_CONTRACT_ADDRESS: process.env.USDC_CONTRACT_ADDRESS as string,
+    // TimescaleDB analytics settings
+    TIMESCALE_URL: process.env.TIMESCALE_URL || '',
+    // Analysis mode - when true, bot monitors and records but doesn't execute trades
+    ANALYSIS_MODE: process.env.ANALYSIS_MODE === 'true',
 };

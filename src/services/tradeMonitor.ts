@@ -2,6 +2,7 @@ import { ENV } from '../config/env';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from '../utils/fetchData';
 import Logger from '../utils/logger';
+import timescaleService, { TradeRecord } from './timescaleService';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
@@ -26,6 +27,22 @@ const init = async () => {
     }
     Logger.clearLine();
     Logger.dbConnection(USER_ADDRESSES, counts);
+
+    // Initialize TimescaleDB connection for analytics (if configured)
+    if (ENV.TIMESCALE_URL) {
+        try {
+            await timescaleService.connect(ENV.TIMESCALE_URL);
+            const tradeCount = await timescaleService.getTradeCount();
+            Logger.info(`TimescaleDB analytics: ${tradeCount} trades stored`);
+        } catch (error) {
+            Logger.error(`TimescaleDB connection failed (analytics disabled): ${error}`);
+        }
+    }
+
+    // Log analysis mode status
+    if (ENV.ANALYSIS_MODE) {
+        Logger.info('Running in ANALYSIS MODE - trades will be monitored but not executed');
+    }
 
     // Show your own positions first
     try {
@@ -161,6 +178,32 @@ const fetchTradeData = async () => {
 
                 await newActivity.save();
                 Logger.info(`New trade detected for ${address.slice(0, 6)}...${address.slice(-4)}`);
+
+                // Sync to TimescaleDB for analytics (if connected)
+                if (timescaleService.isReady()) {
+                    try {
+                        const tradeRecord: TradeRecord = {
+                            time: new Date(activity.timestamp * 1000),
+                            transactionHash: activity.transactionHash,
+                            traderAddress: address,
+                            conditionId: activity.conditionId,
+                            asset: activity.asset, // Include asset for multi-fill dedup
+                            marketTitle: activity.title,
+                            marketSlug: activity.slug,
+                            marketLink: activity.slug
+                                ? `https://polymarket.com/event/${activity.eventSlug}/${activity.slug}`
+                                : undefined,
+                            outcome: activity.outcome,
+                            side: activity.side,
+                            size: activity.size,
+                            usdcSize: activity.usdcSize,
+                            price: activity.price,
+                        };
+                        await timescaleService.insertTrade(tradeRecord);
+                    } catch (tsError) {
+                        Logger.error(`Failed to sync trade to TimescaleDB: ${tsError}`);
+                    }
+                }
             }
 
             // Also fetch and update positions
