@@ -10,6 +10,7 @@ import { WindowSelector } from "@/components/calculator/WindowSelector";
 import { MetricsTable } from "@/components/calculator/MetricsTable";
 import { RollingDistributionTable } from "@/components/calculator/RollingDistributionTable";
 import { RollingMetricsChart } from "@/components/calculator/RollingMetricsChart";
+import { DistributionHistogram } from "@/components/calculator/DistributionHistogram";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { useTraders, useRollingAnalysis } from "@/lib/hooks/use-api";
 import { formatPercent } from "@/lib/mock-data";
@@ -649,6 +650,19 @@ export default function CalculatorPage() {
               </div>
               <div className="p-4">
                 <RollingDistributionTable result={rollingData} />
+              </div>
+            </div>
+
+            {/* Distribution Histogram */}
+            <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
+              <div className="px-5 py-4 border-b border-border/50">
+                <h2 className="font-semibold">Frequency Distribution</h2>
+                <p className="text-sm text-muted-foreground">
+                  Histogram showing how often each metric value occurs
+                </p>
+              </div>
+              <div className="p-4">
+                <DistributionHistogram result={rollingData} />
               </div>
             </div>
           </>

@@ -9,7 +9,7 @@ interface AllocationInput {
 
 interface PeriodReturn {
   periodEnd: Date;
-  weighted_pnl: number;
+  pnlChange: number;
 }
 
 interface TraderPeriodReturn {
@@ -17,7 +17,7 @@ interface TraderPeriodReturn {
   traderId: string;
   traderName: string;
   color: string;
-  pnl: number;
+  pnlChange: number;
 }
 
 /**
@@ -61,10 +61,10 @@ export async function POST(request: NextRequest) {
 
     const { periods, intervalType, sqlInterval, periodsPerYear } = windowConfig;
 
-    // Get weighted P&L data for the portfolio at the appropriate granularity
+    // Get weighted P&L changes for the portfolio at the appropriate granularity
     const returnsQuery = await pool.query<{
       period_end: Date;
-      weighted_pnl: string;
+      weighted_pnl_change: string;
     }>(
       `
       WITH trader_periods AS (
@@ -72,34 +72,44 @@ export async function POST(request: NextRequest) {
         SELECT DISTINCT ON (trader_address, time_bucket($3::INTERVAL, time))
           time_bucket($3::INTERVAL, time) AS period_end,
           trader_address,
-          total_pnl,
-          LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY time_bucket($3::INTERVAL, time)) AS prev_pnl
+          total_pnl
         FROM pnl_snapshots
         WHERE trader_address = ANY($1::text[])
         ORDER BY trader_address, time_bucket($3::INTERVAL, time), time DESC
       ),
-      trader_returns AS (
-        -- Calculate period P&L change
+      trader_with_prev AS (
         SELECT
           period_end,
           trader_address,
-          COALESCE(total_pnl - prev_pnl, 0) AS period_pnl_change
+          total_pnl,
+          LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY period_end) AS prev_pnl
         FROM trader_periods
-        WHERE prev_pnl IS NOT NULL
+      ),
+      trader_returns AS (
+        -- Calculate period P&L change (absolute dollars)
+        SELECT
+          period_end,
+          trader_address,
+          CASE
+            WHEN prev_pnl IS NULL THEN 0
+            ELSE total_pnl - prev_pnl
+          END AS period_pnl_change
+        FROM trader_with_prev
       ),
       weighted_returns AS (
         -- Weight each trader's period P&L change by their allocation percentage
         SELECT
           t.period_end,
-          SUM(t.period_pnl_change * (a.percentage / 100.0)) AS weighted_pnl
+          SUM(t.period_pnl_change * (a.percentage / 100.0)) AS weighted_pnl_change
         FROM trader_returns t
         JOIN (
           SELECT unnest($1::text[]) AS address, unnest($2::float[]) AS percentage
         ) a ON t.trader_address = a.address
+        WHERE t.period_pnl_change IS NOT NULL
         GROUP BY t.period_end
         ORDER BY t.period_end
       )
-      SELECT period_end, weighted_pnl
+      SELECT period_end, weighted_pnl_change
       FROM weighted_returns
       ORDER BY period_end
       `,
@@ -112,7 +122,7 @@ export async function POST(request: NextRequest) {
 
     const periodReturns: PeriodReturn[] = returnsQuery.rows.map((r) => ({
       periodEnd: r.period_end,
-      weighted_pnl: parseFloat(r.weighted_pnl),
+      pnlChange: parseFloat(r.weighted_pnl_change),
     }));
 
     if (periodReturns.length < periods) {
@@ -129,20 +139,21 @@ export async function POST(request: NextRequest) {
       const windowStart = i - periods + 1;
       const windowData = periodReturns.slice(windowStart, i + 1);
 
-      // Build equity curve for this window
+      // Build equity curve by ADDING scaled P&L changes (not compounding)
+      const scaleFactor = initialCapital / 1000000;
       const equityCurve: number[] = [initialCapital];
       let equity = initialCapital;
 
       for (const periodData of windowData) {
-        const scaledPnL = periodData.weighted_pnl * (initialCapital / 1000000);
-        equity += scaledPnL;
+        // Add scaled P&L change to equity (additive, not multiplicative)
+        equity += periodData.pnlChange * scaleFactor;
         equityCurve.push(equity);
       }
 
-      // Calculate period percentage returns for ratio calculations
+      // Calculate period percentage returns FROM the equity curve (for Sharpe, etc.)
       const periodPctReturns: number[] = [];
       for (let j = 1; j < equityCurve.length; j++) {
-        const pctReturn = (equityCurve[j] / equityCurve[j - 1] - 1) * 100;
+        const pctReturn = ((equityCurve[j] - equityCurve[j - 1]) / equityCurve[j - 1]) * 100;
         periodPctReturns.push(pctReturn);
       }
 
@@ -183,20 +194,6 @@ export async function POST(request: NextRequest) {
       const downsideDev = Math.sqrt(downsideVariance);
       const sortinoRatio = downsideDev > 0 ? (meanReturn / downsideDev) * Math.sqrt(periodsPerYear) : null;
 
-      // CAGR calculation
-      // Number of years in this window
-      const yearsInWindow = periods / periodsPerYear;
-      const endingValue = equity;
-      const beginningValue = initialCapital;
-      // CAGR = (Ending / Beginning)^(1/years) - 1
-      let cagr = 0;
-      if (endingValue > 0 && beginningValue > 0 && yearsInWindow > 0) {
-        cagr = (Math.pow(endingValue / beginningValue, 1 / yearsInWindow) - 1) * 100;
-      }
-
-      // CAGR / Max DD ratio (only if drawdown is meaningful)
-      const cagrMaxDdRatio = maxDrawdown > 0.1 ? cagr / maxDrawdown : null;
-
       // Format dates based on interval type
       const formatDate = (date: Date) => {
         if (intervalType === "hour") {
@@ -213,8 +210,6 @@ export async function POST(request: NextRequest) {
         returnPct: totalReturn,
         winRate,
         sortino: sortinoRatio,
-        cagr,
-        cagrMaxDdRatio,
       });
     }
 
@@ -224,10 +219,8 @@ export async function POST(request: NextRequest) {
     const returnValues = rollingWindows.map((w) => w.returnPct);
     const winRateValues = rollingWindows.map((w) => w.winRate);
     const sortinoValues = rollingWindows.map((w) => w.sortino).filter((v): v is number => v !== null);
-    const cagrValues = rollingWindows.map((w) => w.cagr);
-    const cagrMaxDdValues = rollingWindows.map((w) => w.cagrMaxDdRatio).filter((v): v is number => v !== null);
 
-    // Get individual trader P&L data for background lines
+    // Get individual trader P&L changes for background lines
     const individualReturnsQuery = await pool.query<{
       period_end: Date;
       trader_address: string;
@@ -240,22 +233,34 @@ export async function POST(request: NextRequest) {
         SELECT DISTINCT ON (trader_address, time_bucket($2::INTERVAL, time))
           time_bucket($2::INTERVAL, time) AS period_end,
           trader_address,
-          total_pnl,
-          LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY time_bucket($2::INTERVAL, time)) AS prev_pnl
+          total_pnl
         FROM pnl_snapshots
         WHERE trader_address = ANY($1::text[])
         ORDER BY trader_address, time_bucket($2::INTERVAL, time), time DESC
+      ),
+      trader_with_prev AS (
+        SELECT
+          tp.period_end,
+          tp.trader_address,
+          tp.total_pnl,
+          LAG(tp.total_pnl) OVER (PARTITION BY tp.trader_address ORDER BY tp.period_end) AS prev_pnl,
+          t.alias AS trader_name,
+          t.color
+        FROM trader_periods tp
+        JOIN tracked_traders t ON tp.trader_address = t.address
       )
       SELECT
-        tp.period_end,
-        tp.trader_address,
-        t.alias AS trader_name,
-        t.color,
-        COALESCE(tp.total_pnl - tp.prev_pnl, 0) AS pnl_change
-      FROM trader_periods tp
-      JOIN tracked_traders t ON tp.trader_address = t.address
-      WHERE tp.prev_pnl IS NOT NULL
-      ORDER BY tp.trader_address, tp.period_end
+        period_end,
+        trader_address,
+        trader_name,
+        color,
+        CASE
+          WHEN prev_pnl IS NULL THEN 0
+          ELSE total_pnl - prev_pnl
+        END AS pnl_change
+      FROM trader_with_prev
+      WHERE prev_pnl IS NOT NULL
+      ORDER BY trader_address, period_end
       `,
       [allocations.map((a) => a.traderAddress.toLowerCase()), sqlInterval]
     );
@@ -280,7 +285,7 @@ export async function POST(request: NextRequest) {
         traderId: row.trader_address,
         traderName: row.trader_name,
         color: row.color || COLORS[idx % COLORS.length],
-        pnl: parseFloat(row.pnl_change),
+        pnlChange: parseFloat(row.pnl_change),
       });
     });
 
@@ -298,20 +303,20 @@ export async function POST(request: NextRequest) {
         const windowStart = i - periods + 1;
         const windowData = traderReturns.slice(windowStart, i + 1);
 
-        // Build equity curve for this trader's window
+        // Build equity curve by ADDING scaled P&L changes (not compounding)
+        const scaleFactor = initialCapital / 1000000;
         const equityCurve: number[] = [initialCapital];
         let equity = initialCapital;
 
         for (const periodData of windowData) {
-          const scaledPnL = periodData.pnl * (initialCapital / 1000000);
-          equity += scaledPnL;
+          equity += periodData.pnlChange * scaleFactor;
           equityCurve.push(equity);
         }
 
-        // Calculate period percentage returns
+        // Calculate period percentage returns FROM the equity curve
         const periodPctReturns: number[] = [];
         for (let j = 1; j < equityCurve.length; j++) {
-          const pctReturn = (equityCurve[j] / equityCurve[j - 1] - 1) * 100;
+          const pctReturn = ((equityCurve[j] - equityCurve[j - 1]) / equityCurve[j - 1]) * 100;
           periodPctReturns.push(pctReturn);
         }
 
@@ -351,18 +356,6 @@ export async function POST(request: NextRequest) {
         const downsideDev = Math.sqrt(downsideVariance);
         const sortinoRatio = downsideDev > 0 ? (meanReturn / downsideDev) * Math.sqrt(periodsPerYear) : null;
 
-        // CAGR calculation
-        const yearsInWindow = periods / periodsPerYear;
-        const endingValue = equity;
-        const beginningValue = initialCapital;
-        let cagr = 0;
-        if (endingValue > 0 && beginningValue > 0 && yearsInWindow > 0) {
-          cagr = (Math.pow(endingValue / beginningValue, 1 / yearsInWindow) - 1) * 100;
-        }
-
-        // CAGR / Max DD ratio
-        const cagrMaxDdRatio = maxDrawdown > 0.1 ? cagr / maxDrawdown : null;
-
         // Format dates
         const formatDate = (date: Date) => {
           if (intervalType === "hour") {
@@ -379,8 +372,6 @@ export async function POST(request: NextRequest) {
           returnPct: totalReturn,
           winRate,
           sortino: sortinoRatio,
-          cagr,
-          cagrMaxDdRatio,
         });
       }
 
@@ -464,16 +455,6 @@ export async function POST(request: NextRequest) {
         sortinoValues,
         rollingWindows,
         (w) => w.sortino
-      ),
-      cagr: calculateDistribution(
-        cagrValues,
-        rollingWindows,
-        (w) => w.cagr
-      ),
-      cagrMaxDdRatio: calculateDistribution(
-        cagrMaxDdValues,
-        rollingWindows,
-        (w) => w.cagrMaxDdRatio
       ),
       timeSeries: rollingWindows,
       traderTimelines,

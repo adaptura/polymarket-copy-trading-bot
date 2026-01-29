@@ -67,11 +67,10 @@ export async function POST(request: NextRequest) {
     for (const window of windows) {
       const interval = windowToInterval(window);
 
-      // Get daily percentage returns for each trader, then weight them
-      // We calculate % change from previous day's P&L
+      // Get daily P&L changes for each trader (absolute dollar amounts)
       const portfolioQuery = await pool.query<{
         day: Date;
-        weighted_daily_return: string;
+        weighted_daily_pnl: string;
       }>(
         `
         WITH trader_daily AS (
@@ -79,22 +78,30 @@ export async function POST(request: NextRequest) {
           SELECT DISTINCT ON (trader_address, DATE_TRUNC('day', time))
             DATE_TRUNC('day', time) AS day,
             trader_address,
-            total_pnl,
-            LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY DATE_TRUNC('day', time)) AS prev_pnl
+            total_pnl
           FROM pnl_snapshots
           WHERE time >= NOW() - $1::INTERVAL
             AND trader_address = ANY($2::text[])
           ORDER BY trader_address, DATE_TRUNC('day', time), time DESC
         ),
-        trader_returns AS (
-          -- Calculate daily P&L change (not percentage - we'll use absolute change)
+        trader_with_prev AS (
           SELECT
             day,
             trader_address,
             total_pnl,
-            COALESCE(total_pnl - prev_pnl, 0) AS daily_pnl_change
+            LAG(total_pnl) OVER (PARTITION BY trader_address ORDER BY day) AS prev_pnl
           FROM trader_daily
-          WHERE prev_pnl IS NOT NULL
+        ),
+        trader_returns AS (
+          -- Calculate daily P&L change (absolute dollars)
+          SELECT
+            day,
+            trader_address,
+            CASE
+              WHEN prev_pnl IS NULL THEN 0
+              ELSE total_pnl - prev_pnl
+            END AS daily_pnl_change
+          FROM trader_with_prev
         ),
         weighted_returns AS (
           -- Weight each trader's daily P&L change by their allocation percentage
@@ -105,12 +112,13 @@ export async function POST(request: NextRequest) {
           JOIN (
             SELECT unnest($2::text[]) AS address, unnest($3::float[]) AS percentage
           ) a ON t.trader_address = a.address
+          WHERE t.daily_pnl_change IS NOT NULL
           GROUP BY t.day
           ORDER BY t.day
         )
         SELECT
           day,
-          weighted_daily_pnl AS weighted_daily_return
+          weighted_daily_pnl
         FROM weighted_returns
         ORDER BY day
         `,
@@ -121,9 +129,9 @@ export async function POST(request: NextRequest) {
         ]
       );
 
-      const dailyReturns = portfolioQuery.rows.map((r) => parseFloat(r.weighted_daily_return));
+      const dailyPnLChanges = portfolioQuery.rows.map((r) => parseFloat(r.weighted_daily_pnl));
 
-      if (dailyReturns.length === 0) {
+      if (dailyPnLChanges.length === 0) {
         results.push({
           window,
           maxDrawdown: 0,
@@ -139,15 +147,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Build equity curve starting from initial capital
+      // Build equity curve by ADDING scaled P&L changes (not compounding)
+      // Scale factor: user's capital / $1M reference
+      const scaleFactor = initialCapital / 1000000;
       const equityCurve: number[] = [initialCapital];
       let equity = initialCapital;
 
-      for (const dailyPnL of dailyReturns) {
-        // Scale the P&L proportionally to our capital vs traders' capital
-        // Assume traders operate with ~$1M average, so scale accordingly
-        const scaledPnL = dailyPnL * (initialCapital / 1000000);
-        equity += scaledPnL;
+      for (const dailyPnL of dailyPnLChanges) {
+        // Add scaled P&L change to equity (additive, not multiplicative)
+        equity += dailyPnL * scaleFactor;
         equityCurve.push(equity);
       }
 
@@ -155,10 +163,10 @@ export async function POST(request: NextRequest) {
       const totalPnL = equity - initialCapital;
       const totalReturn = (equity / initialCapital - 1) * 100;
 
-      // Daily percentage returns for ratio calculations
+      // Calculate daily percentage returns FROM the equity curve (for Sharpe, etc.)
       const dailyPctReturns: number[] = [];
       for (let i = 1; i < equityCurve.length; i++) {
-        const pctReturn = (equityCurve[i] / equityCurve[i - 1] - 1) * 100;
+        const pctReturn = ((equityCurve[i] - equityCurve[i - 1]) / equityCurve[i - 1]) * 100;
         dailyPctReturns.push(pctReturn);
       }
 
@@ -209,8 +217,8 @@ export async function POST(request: NextRequest) {
       const downsideDev = Math.sqrt(downsideVariance);
       const sortinoRatio = downsideDev > 0 ? (meanReturn / downsideDev) * Math.sqrt(252) : null;
 
-      // CAGR
-      const daysInPeriod = dailyReturns.length;
+      // CAGR - calculated from the equity curve built from percentage returns
+      const daysInPeriod = dailyPctReturns.length;
       const years = daysInPeriod / 365;
       const cagr = years > 0 && initialCapital > 0 && equity > 0
         ? (Math.pow(equity / initialCapital, 1 / years) - 1) * 100

@@ -8,9 +8,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { CalculatorMetrics } from "@/types";
 import { formatCurrency, formatPercent } from "@/lib/mock-data";
+
+const METRIC_TOOLTIPS = {
+  maxDD: (
+    <div className="space-y-1">
+      <div className="font-medium">Maximum Drawdown</div>
+      <div className="text-muted-foreground text-xs">
+        Largest peak-to-trough decline in portfolio value.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = (Peak - Trough) / Peak × 100
+      </div>
+    </div>
+  ),
+  cagr: (
+    <div className="space-y-1">
+      <div className="font-medium">CAGR (Compound Annual Growth Rate)</div>
+      <div className="text-muted-foreground text-xs">
+        Annualized return assuming profits are reinvested.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = (Ending / Beginning)^(365/days) - 1
+      </div>
+    </div>
+  ),
+  totalPnL: (
+    <div className="space-y-1">
+      <div className="font-medium">Total P&L</div>
+      <div className="text-muted-foreground text-xs">
+        Total profit/loss scaled to your initial capital. Based on additive P&L from traders.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = Σ(Daily P&L) × (Your Capital / $1M)
+      </div>
+    </div>
+  ),
+  sharpe: (
+    <div className="space-y-1">
+      <div className="font-medium">Sharpe Ratio</div>
+      <div className="text-muted-foreground text-xs">
+        Risk-adjusted return. Higher is better. &gt;2 is excellent, &lt;1 is poor.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = (Mean Return / Std Dev) × √252
+      </div>
+    </div>
+  ),
+  sortino: (
+    <div className="space-y-1">
+      <div className="font-medium">Sortino Ratio</div>
+      <div className="text-muted-foreground text-xs">
+        Like Sharpe but only penalizes downside volatility. Better for asymmetric returns.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = (Mean Return / Downside Dev) × √252
+      </div>
+    </div>
+  ),
+  winRate: (
+    <div className="space-y-1">
+      <div className="font-medium">Win Rate</div>
+      <div className="text-muted-foreground text-xs">
+        Percentage of days with positive returns.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = Winning Days / Total Days × 100
+      </div>
+    </div>
+  ),
+  profitFactor: (
+    <div className="space-y-1">
+      <div className="font-medium">Profit Factor</div>
+      <div className="text-muted-foreground text-xs">
+        Ratio of gross profits to gross losses. &gt;2 is good, &lt;1 means net loser.
+      </div>
+      <div className="font-mono text-xs mt-1">
+        = Gross Profits / |Gross Losses|
+      </div>
+    </div>
+  ),
+};
 
 interface MetricsTableProps {
   metrics: CalculatorMetrics[];
@@ -26,36 +112,86 @@ export function MetricsTable({ metrics }: MetricsTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow className="border-border/50 hover:bg-transparent">
-            <TableHead className="text-muted-foreground font-medium">
-              Window
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Max DD
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              CAGR
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Total P&L
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Sharpe
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Sortino
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Win Rate
-            </TableHead>
-            <TableHead className="text-right text-muted-foreground font-medium">
-              Profit Factor
-            </TableHead>
-          </TableRow>
-        </TableHeader>
+    <TooltipProvider delayDuration={200}>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-border/50 hover:bg-transparent">
+              <TableHead className="text-muted-foreground font-medium">
+                Window
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Max DD</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.maxDD}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">CAGR</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.cagr}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Total P&L</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.totalPnL}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Sharpe</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.sharpe}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Sortino</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.sortino}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Win Rate</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.winRate}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+              <TableHead className="text-right text-muted-foreground font-medium">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="cursor-help border-b border-dotted border-muted-foreground/50">Profit Factor</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    {METRIC_TOOLTIPS.profitFactor}
+                  </TooltipContent>
+                </Tooltip>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
         <TableBody>
           {metrics.map((metric, index) => (
             <TableRow
@@ -143,5 +279,6 @@ export function MetricsTable({ metrics }: MetricsTableProps) {
         </TableBody>
       </Table>
     </div>
+    </TooltipProvider>
   );
 }

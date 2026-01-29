@@ -21,12 +21,15 @@ interface RollingMetricsChartProps {
 
 type MetricKey = "sharpe" | "drawdown" | "returnPct" | "winRate" | "sortino";
 
+// All metrics use red for the combined portfolio line
+const PORTFOLIO_COLOR = "#FF6B6B";
+
 const METRIC_CONFIG: Record<MetricKey, { label: string; color: string; format: (v: number) => string }> = {
-  sharpe: { label: "Sharpe Ratio", color: "#00D9FF", format: (v) => v.toFixed(2) },
-  drawdown: { label: "Max Drawdown", color: "#FF6B6B", format: (v) => `${v.toFixed(1)}%` },
-  returnPct: { label: "Return", color: "#22C55E", format: (v) => `${v.toFixed(1)}%` },
-  winRate: { label: "Win Rate", color: "#A855F7", format: (v) => `${v.toFixed(1)}%` },
-  sortino: { label: "Sortino Ratio", color: "#F59E0B", format: (v) => v.toFixed(2) },
+  sharpe: { label: "Sharpe Ratio", color: PORTFOLIO_COLOR, format: (v) => v.toFixed(2) },
+  drawdown: { label: "Max Drawdown", color: PORTFOLIO_COLOR, format: (v) => `${v.toFixed(1)}%` },
+  returnPct: { label: "Return", color: PORTFOLIO_COLOR, format: (v) => `${v.toFixed(1)}%` },
+  winRate: { label: "Win Rate", color: PORTFOLIO_COLOR, format: (v) => `${v.toFixed(1)}%` },
+  sortino: { label: "Sortino Ratio", color: PORTFOLIO_COLOR, format: (v) => v.toFixed(2) },
 };
 
 export function RollingMetricsChart({ result, height = 350 }: RollingMetricsChartProps) {
@@ -184,6 +187,31 @@ export function RollingMetricsChart({ result, height = 350 }: RollingMetricsChar
       lastValueVisible: false,
     });
     medianSeries.setData(medianData);
+
+    // Add individual trader lines in the background (50% opacity)
+    if (result.individualTraderSeries && result.individualTraderSeries.length > 0) {
+      for (const traderSeries of result.individualTraderSeries) {
+        const traderData = deduplicateByTime(
+          traderSeries.data
+            .filter((item) => getValue(item) !== null)
+            .map((item) => ({
+              time: toUnixSeconds(item.endDate) as Time,
+              value: getValue(item)!,
+            }))
+        );
+
+        if (traderData.length > 0) {
+          const traderLineSeries = chart.addSeries(LineSeries, {
+            color: hexToRgba(traderSeries.color, 0.5),
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+          });
+          traderLineSeries.setData(traderData);
+        }
+      }
+    }
 
     // Add main metric line - deduplicated
     const mainData = deduplicateByTime(
@@ -389,13 +417,13 @@ export function RollingMetricsChart({ result, height = 350 }: RollingMetricsChar
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 text-xs text-muted-foreground">
+      <div className="flex items-center gap-6 text-xs text-muted-foreground flex-wrap">
         <div className="flex items-center gap-2">
           <div
             className="w-8 h-0.5"
             style={{ backgroundColor: METRIC_CONFIG[selectedMetric].color }}
           />
-          <span>{METRIC_CONFIG[selectedMetric].label}</span>
+          <span>Portfolio {METRIC_CONFIG[selectedMetric].label}</span>
         </div>
         <div className="flex items-center gap-2">
           <div
@@ -411,6 +439,20 @@ export function RollingMetricsChart({ result, height = 350 }: RollingMetricsChar
           />
           <span>10th-90th Percentile</span>
         </div>
+        {result.individualTraderSeries && result.individualTraderSeries.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex -space-x-1">
+              {result.individualTraderSeries.slice(0, 3).map((trader) => (
+                <div
+                  key={trader.traderId}
+                  className="w-3 h-0.5 opacity-50"
+                  style={{ backgroundColor: trader.color }}
+                />
+              ))}
+            </div>
+            <span>Individual Traders (50% opacity)</span>
+          </div>
+        )}
       </div>
     </div>
   );

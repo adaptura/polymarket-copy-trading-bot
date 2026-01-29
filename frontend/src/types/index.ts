@@ -135,8 +135,6 @@ export interface RollingAnalysisResult {
   totalReturn: MetricDistribution;
   winRate: MetricDistribution;
   sortinoRatio: MetricDistribution;
-  cagr: MetricDistribution;
-  cagrMaxDdRatio: MetricDistribution;
   timeSeries: RollingTimeSeries[];
   traderTimelines: TraderTimeline[];
   individualTraderSeries: IndividualTraderSeries[];
@@ -150,6 +148,4 @@ export interface RollingTimeSeries {
   returnPct: number;
   winRate: number;
   sortino: number | null;
-  cagr: number;
-  cagrMaxDdRatio: number | null;
 }
