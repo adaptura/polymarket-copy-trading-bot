@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Calculator,
-  Grid3X3,
   Users,
   TrendingUp,
 } from "lucide-react";
@@ -19,19 +18,14 @@ const navigation = [
     icon: LayoutDashboard,
   },
   {
-    name: "Calculator",
-    href: "/calculator",
-    icon: Calculator,
-  },
-  {
-    name: "Markets",
-    href: "/markets",
-    icon: Grid3X3,
-  },
-  {
     name: "Traders",
     href: "/traders",
     icon: Users,
+  },
+  {
+    name: "Calculator",
+    href: "/calculator",
+    icon: Calculator,
   },
 ];
 

@@ -20,12 +20,12 @@ export interface TradeRecord {
     traderAddress: string;
     conditionId: string;
     asset?: string; // Token ID - needed for multi-fill dedup
-    type?: 'TRADE' | 'REDEEM' | 'SPLIT' | 'MERGE'; // Activity type
+    type?: 'TRADE' | 'REDEEM' | 'SPLIT' | 'MERGE' | 'REWARD' | 'MAKER_REBATE'; // Activity type
     marketTitle?: string;
     marketSlug?: string;
     marketLink?: string;
     outcome?: string;
-    side: 'BUY' | 'SELL' | 'REDEEM';
+    side: 'BUY' | 'SELL' | 'REDEEM' | 'SPLIT' | 'MERGE' | 'REWARD' | 'MAKER_REBATE';
     size?: number;
     usdcSize?: number;
     price?: number;

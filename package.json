@@ -39,9 +39,12 @@
         "analytics:performance": "ts-node src/scripts/runAnalytics.ts",
         "analytics:backtest": "ts-node src/scripts/runBacktest.ts",
         "analytics:backfill": "ts-node src/scripts/backfillTimescale.ts",
+        "analytics:prices": "ts-node src/scripts/backfillMarketPrices.ts",
+        "db:migrate": "ts-node src/scripts/runMigration.ts",
         "lint": "eslint .",
         "lint:fix": "eslint --fix .",
-        "format": "prettier --write ."
+        "format": "prettier --write .",
+        "cloc": "cloc . --exclude-dir=node_modules,dist,.git"
     },
     "keywords": [],
     "author": "vladmeer",

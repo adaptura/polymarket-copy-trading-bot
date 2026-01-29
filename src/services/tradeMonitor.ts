@@ -125,11 +125,23 @@ const init = async () => {
 const fetchTradeData = async () => {
     for (const { address, UserActivity, UserPosition } of userModels) {
         try {
-            // Fetch trade activities from Polymarket API
-            const apiUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
-            const activities = await fetchData(apiUrl);
+            // Fetch both TRADE and REDEEM activities from Polymarket API
+            // REDEEMs are critical for accurate P&L calculation
+            const tradeUrl = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE`;
+            const redeemUrl = `https://data-api.polymarket.com/activity?user=${address}&type=REDEEM`;
 
-            if (!Array.isArray(activities) || activities.length === 0) {
+            const [tradeActivities, redeemActivities] = await Promise.all([
+                fetchData(tradeUrl),
+                fetchData(redeemUrl),
+            ]);
+
+            // Combine both activity types
+            const activities = [
+                ...(Array.isArray(tradeActivities) ? tradeActivities : []),
+                ...(Array.isArray(redeemActivities) ? redeemActivities.map((r: any) => ({ ...r, side: 'REDEEM' })) : []),
+            ];
+
+            if (activities.length === 0) {
                 continue;
             }
 
@@ -188,6 +200,7 @@ const fetchTradeData = async () => {
                             traderAddress: address,
                             conditionId: activity.conditionId,
                             asset: activity.asset, // Include asset for multi-fill dedup
+                            type: activity.side === 'REDEEM' ? 'REDEEM' : (activity.type || 'TRADE'),
                             marketTitle: activity.title,
                             marketSlug: activity.slug,
                             marketLink: activity.slug

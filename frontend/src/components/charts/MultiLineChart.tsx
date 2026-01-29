@@ -99,6 +99,24 @@ export function MultiLineChart({ series, volumeSeries, height = 400 }: MultiLine
 
     chartRef.current = chart;
 
+    // Helper to convert time to Unix timestamp in seconds
+    const toUnixSeconds = (time: Time): number => {
+      if (typeof time === "number") {
+        // Already a Unix timestamp - check if seconds or milliseconds
+        if (time > 1e12) {
+          return Math.floor(time / 1000); // Convert milliseconds to seconds
+        }
+        return time; // Already in seconds
+      }
+      if (typeof time === "string") {
+        const date = new Date(time);
+        return Math.floor(date.getTime() / 1000);
+      }
+      // BusinessDay object
+      const bd = time as { year: number; month: number; day: number };
+      return Math.floor(new Date(bd.year, bd.month - 1, bd.day).getTime() / 1000);
+    };
+
     // Add volume series first (so they appear behind the lines)
     // Create grouped bars by offsetting each trader's data slightly
     if (volumeSeries && volumeSeries.length > 0) {
@@ -126,13 +144,9 @@ export function MultiLineChart({ series, volumeSeries, height = 400 }: MultiLine
         // Offset each trader's data to create side-by-side grouped bars
         const offsetSeconds = (traderIndex - (numTraders - 1) / 2) * barWidth;
         const offsetData = traderVolume.data.map((d) => {
-          // Convert date string to timestamp, add offset, convert back
-          const dateStr = d.time as string;
-          const date = new Date(dateStr);
-          // Add offset (center the group around the original time)
-          date.setTime(date.getTime() + offsetSeconds * 1000);
+          const baseTime = toUnixSeconds(d.time);
           return {
-            time: (date.getTime() / 1000) as Time, // Unix timestamp
+            time: (baseTime + offsetSeconds) as Time,
             value: d.value,
           };
         });
@@ -155,15 +169,11 @@ export function MultiLineChart({ series, volumeSeries, height = 400 }: MultiLine
         crosshairMarkerBackgroundColor: colors.cardBg,
       });
 
-      // Convert date strings to unix timestamps for consistency with volume data
-      const timestampData = traderSeries.data.map((d) => {
-        const dateStr = d.time as string;
-        const date = new Date(dateStr);
-        return {
-          time: (date.getTime() / 1000) as Time,
-          value: d.value,
-        };
-      });
+      // Convert to unix timestamps (handles both string dates and numeric timestamps)
+      const timestampData = traderSeries.data.map((d) => ({
+        time: toUnixSeconds(d.time) as Time,
+        value: d.value,
+      }));
 
       lineSeries.setData(timestampData as LineData<Time>[]);
       seriesRefs.current.set(traderSeries.traderId, lineSeries);

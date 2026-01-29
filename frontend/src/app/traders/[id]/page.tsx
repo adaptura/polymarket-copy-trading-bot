@@ -1,124 +1,109 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   TrendingUp,
   TrendingDown,
-  Calendar,
-  Target,
-  Activity,
+  RefreshCw,
+  AlertTriangle,
+  BarChart3,
+  Percent,
+  Loader2,
 } from "lucide-react";
 import { PriceLineChart } from "@/components/charts";
-import { ActivityHeatmap } from "@/components/charts/ActivityHeatmap";
 import { StatCard } from "@/components/dashboard/StatCard";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
+import { TimeRangeSelector } from "@/components/dashboard/TimeRangeSelector";
 import { cn } from "@/lib/utils";
-import {
-  getTraderById,
-  generateActivityHeatmap,
-  generateTraderPnLSeries,
-  formatCurrency,
-  formatRelativeTime,
-  MOCK_MARKETS,
-  MOCK_TRADERS,
-} from "@/lib/mock-data";
+import { useTraderAnalytics, useTakeSnapshot } from "@/lib/hooks/use-api";
+import { formatCurrency } from "@/lib/mock-data";
 import type { PriceData } from "@/components/charts";
-
-// Generate mock trades for this trader
-function generateTraderTrades(traderId: string, count: number = 30) {
-  const trades: {
-    id: string;
-    marketId: string;
-    marketName: string;
-    side: "BUY" | "SELL";
-    amount: number;
-    price: number;
-    timestamp: Date;
-    pnl: number;
-  }[] = [];
-
-  let seed = traderId.charCodeAt(7) * 1000;
-  const seededRandom = () => {
-    const x = Math.sin(seed++) * 10000;
-    return x - Math.floor(x);
-  };
-
-  for (let i = 0; i < count; i++) {
-    const market = MOCK_MARKETS[Math.floor(seededRandom() * MOCK_MARKETS.length)];
-    const hoursAgo = Math.floor(seededRandom() * 168); // Up to 7 days
-    const amount = Math.floor(seededRandom() * 5000) + 500;
-    const pnlPercent = (seededRandom() - 0.4) * 0.3; // Slight positive bias
-
-    trades.push({
-      id: `trade-${traderId}-${i}`,
-      marketId: market.id,
-      marketName: market.name,
-      side: seededRandom() > 0.5 ? "BUY" : "SELL",
-      amount,
-      price: 0.3 + seededRandom() * 0.5,
-      timestamp: new Date(Date.now() - hoursAgo * 60 * 60 * 1000),
-      pnl: amount * pnlPercent,
-    });
-  }
-
-  return trades.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-}
-
-// Generate market stats for this trader
-function generateTraderMarketStats(traderId: string) {
-  let seed = traderId.charCodeAt(7) * 500;
-  const seededRandom = () => {
-    const x = Math.sin(seed++) * 10000;
-    return x - Math.floor(x);
-  };
-
-  return MOCK_MARKETS.slice(0, 5).map((market) => ({
-    market,
-    tradeCount: Math.floor(seededRandom() * 200) + 20,
-    totalVolume: Math.floor(seededRandom() * 50000) + 5000,
-    pnl: (seededRandom() - 0.3) * 10000,
-    winRate: 40 + seededRandom() * 40,
-  }));
-}
+import type { TimeRange } from "@/types";
 
 export default function TraderProfilePage() {
   const params = useParams();
   const traderId = params.id as string;
 
   const [mounted, setMounted] = useState(false);
+  const [timeRange, setTimeRange] = useState<TimeRange>("90D");
+  const nowRef = useRef(Date.now());
+
+  const { analytics, loading, error, refetch } = useTraderAnalytics(traderId);
+  const { takeSnapshot, loading: snapshotLoading } = useTakeSnapshot();
 
   useEffect(() => {
     setMounted(true);
+    nowRef.current = Date.now();
   }, []);
 
-  const trader = getTraderById(traderId);
-  const activityData = useMemo(() => generateActivityHeatmap(traderId), [traderId]);
-  const recentTrades = useMemo(() => generateTraderTrades(traderId), [traderId]);
-  const marketStats = useMemo(() => generateTraderMarketStats(traderId), [traderId]);
+  // Filter P&L history based on time range
+  const filteredHistory = useMemo(() => {
+    if (!analytics?.pnlHistory) return [];
 
-  // Generate P&L curve for this trader
-  const pnlSeries = useMemo(() => {
-    if (!trader) return [];
-    const series = generateTraderPnLSeries([trader], 90);
-    return series[0]?.data || [];
-  }, [trader]);
+    const now = Date.now();
+    let cutoff: number;
 
-  if (!trader) {
+    switch (timeRange) {
+      case "1D":
+        cutoff = now - 24 * 60 * 60 * 1000;
+        break;
+      case "7D":
+        cutoff = now - 7 * 24 * 60 * 60 * 1000;
+        break;
+      case "30D":
+        cutoff = now - 30 * 24 * 60 * 60 * 1000;
+        break;
+      case "90D":
+        cutoff = now - 90 * 24 * 60 * 60 * 1000;
+        break;
+      case "1Y":
+        cutoff = now - 365 * 24 * 60 * 60 * 1000;
+        break;
+      case "All":
+      default:
+        cutoff = 0;
+    }
+
+    return analytics.pnlHistory.filter(
+      (point) => new Date(point.time).getTime() >= cutoff
+    );
+  }, [analytics?.pnlHistory, timeRange]);
+
+  // Convert to chart format
+  const chartData: PriceData[] = useMemo(() => {
+    return filteredHistory.map((point) => ({
+      time: Math.floor(new Date(point.time).getTime() / 1000) as any,
+      value: point.totalPnl,
+    }));
+  }, [filteredHistory]);
+
+  const handleRefresh = async () => {
+    try {
+      await takeSnapshot(traderId);
+      refetch();
+    } catch (err) {
+      console.error("Failed to refresh:", err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error || !analytics) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-2">Trader not found</h1>
+          <p className="text-muted-foreground mb-4">
+            {error?.message || "Could not load trader data"}
+          </p>
           <Link href="/traders" className="text-primary hover:underline">
             Back to traders
           </Link>
@@ -127,17 +112,15 @@ export default function TraderProfilePage() {
     );
   }
 
-  const daysSinceActive = Math.floor(
-    (Date.now() - trader.activeSince.getTime()) / (1000 * 60 * 60 * 24)
-  );
-  const avgDailyPnL = trader.totalPnL / daysSinceActive;
+  const { trader, drawdown, rollingReturns, volatility } = analytics;
+  const traderColor = trader.color || "#10b981";
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-sm">
         <div className="px-6 py-4">
-          <div className="flex items-center gap-4 mb-3">
+          <div className="flex items-center gap-4">
             <Link
               href="/traders"
               className="p-2 rounded-lg hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground"
@@ -148,50 +131,54 @@ export default function TraderProfilePage() {
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold"
                 style={{
-                  backgroundColor: `${trader.color}20`,
-                  color: trader.color,
-                  boxShadow: `0 0 20px ${trader.color}30`,
+                  backgroundColor: `${traderColor}20`,
+                  color: traderColor,
+                  boxShadow: `0 0 20px ${traderColor}30`,
                 }}
               >
-                {trader.name.charAt(0)}
+                {trader.alias.charAt(0)}
               </div>
               <div>
-                <h1 className="text-xl font-semibold">{trader.name}</h1>
-                <p className="text-sm text-muted-foreground">
-                  Active since{" "}
-                  {trader.activeSince.toLocaleDateString("en-US", {
-                    month: "long",
-                    year: "numeric",
-                  })}
+                <h1 className="text-xl font-semibold">{trader.alias}</h1>
+                <p className="text-sm text-muted-foreground font-mono">
+                  {trader.address.slice(0, 6)}...{trader.address.slice(-4)}
                 </p>
               </div>
             </div>
 
-            {/* Performance badge */}
+            <button
+              onClick={handleRefresh}
+              disabled={snapshotLoading}
+              className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-secondary hover:bg-secondary/80 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${snapshotLoading ? "animate-spin" : ""}`} />
+              {snapshotLoading ? "Updating..." : "Update"}
+            </button>
+
             <div
               className={cn(
                 "px-4 py-2 rounded-lg font-mono font-bold text-lg",
-                trader.totalPnL >= 0
+                trader.totalPnl >= 0
                   ? "bg-profit/10 text-profit"
                   : "bg-loss/10 text-loss"
               )}
             >
-              {trader.totalPnL >= 0 ? "+" : ""}
-              {formatCurrency(trader.totalPnL)}
+              {trader.totalPnl >= 0 ? "+" : ""}
+              {formatCurrency(trader.totalPnl)}
             </div>
           </div>
         </div>
       </header>
 
       <div className="p-6 space-y-6">
-        {/* Stat Cards */}
+        {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <StatCard
             title="Total P&L"
-            value={formatCurrency(trader.totalPnL)}
-            change={trader.totalPnL > 50000 ? 24.5 : trader.totalPnL > 0 ? 12.3 : -8.4}
+            value={formatCurrency(trader.totalPnl)}
+            change={trader.totalPnl > 0 ? 1 : -1}
             icon={
-              trader.totalPnL >= 0 ? (
+              trader.totalPnl >= 0 ? (
                 <TrendingUp className="w-4 h-4" />
               ) : (
                 <TrendingDown className="w-4 h-4" />
@@ -199,171 +186,209 @@ export default function TraderProfilePage() {
             }
           />
           <StatCard
-            title="Markets Traded"
-            value={trader.marketsTraded.toString()}
-            icon={<Target className="w-4 h-4" />}
+            title="Max Drawdown"
+            value={`${drawdown.maxDrawdownPct.toFixed(1)}%`}
+            change={drawdown.maxDrawdownPct > 20 ? -1 : 0}
+            icon={<AlertTriangle className="w-4 h-4" />}
           />
           <StatCard
-            title="Days Active"
-            value={daysSinceActive.toString()}
-            icon={<Calendar className="w-4 h-4" />}
+            title="Win Rate"
+            value={`${volatility.winRate.toFixed(1)}%`}
+            change={volatility.winRate > 50 ? 1 : -1}
+            icon={<Percent className="w-4 h-4" />}
           />
           <StatCard
-            title="Avg Daily P&L"
-            value={formatCurrency(avgDailyPnL)}
-            change={avgDailyPnL > 0 ? 5.2 : -3.1}
-            icon={<Activity className="w-4 h-4" />}
+            title="Open Positions"
+            value={trader.positionCount.toString()}
+            change={0}
+            icon={<BarChart3 className="w-4 h-4" />}
           />
         </div>
 
         {/* P&L Chart */}
         <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
-          <div className="px-5 py-4 border-b border-border/50">
-            <h2 className="font-semibold">P&L Performance</h2>
-            <p className="text-sm text-muted-foreground">
-              90 day cumulative returns
-            </p>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border/50">
+            <div>
+              <h2 className="font-semibold">P&L Performance</h2>
+              <p className="text-sm text-muted-foreground">
+                Historical P&L from Polymarket
+              </p>
+            </div>
+            <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
           </div>
           <div className="p-4">
-            {mounted && pnlSeries.length > 0 ? (
-              <PriceLineChart
-                data={pnlSeries as PriceData[]}
-                height={300}
-                lineColor={trader.color}
-                areaTopColor={`${trader.color}40`}
-                areaBottomColor={`${trader.color}05`}
-              />
-            ) : (
+            {!mounted || chartData.length === 0 ? (
               <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                Loading chart...
+                {chartData.length === 0
+                  ? "No P&L data available. Run backfill to import historical data."
+                  : "Loading chart..."}
               </div>
+            ) : (
+              <PriceLineChart
+                data={chartData}
+                height={300}
+                lineColor={traderColor}
+                areaTopColor={`${traderColor}40`}
+                areaBottomColor={`${traderColor}05`}
+              />
             )}
           </div>
         </div>
 
-        {/* Activity Heatmap */}
-        <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
-          <div className="px-5 py-4 border-b border-border/50">
-            <h2 className="font-semibold">Trading Activity</h2>
-            <p className="text-sm text-muted-foreground">
-              Trade frequency by day and hour (UTC)
-            </p>
+        {/* Analytics Panels */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Rolling Returns */}
+          <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/50">
+              <h2 className="font-semibold">Rolling Returns</h2>
+              <p className="text-sm text-muted-foreground">P&L by period</p>
+            </div>
+            <div className="divide-y divide-border/50">
+              {[
+                { label: "7 Days", value: rollingReturns.pnl7d },
+                { label: "30 Days", value: rollingReturns.pnl30d },
+                { label: "90 Days", value: rollingReturns.pnl90d },
+                { label: "Year to Date", value: rollingReturns.pnlYtd },
+                { label: "All Time", value: rollingReturns.pnlAllTime },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between px-5 py-3"
+                >
+                  <span className="text-muted-foreground">{item.label}</span>
+                  <span
+                    className={cn(
+                      "font-mono font-medium",
+                      item.value === null
+                        ? "text-muted-foreground"
+                        : item.value >= 0
+                        ? "text-profit"
+                        : "text-loss"
+                    )}
+                  >
+                    {item.value === null
+                      ? "N/A"
+                      : `${item.value >= 0 ? "+" : ""}${formatCurrency(item.value)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="p-5">
-            <ActivityHeatmap data={activityData} color={trader.color} />
+
+          {/* Drawdown Metrics */}
+          <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/50">
+              <h2 className="font-semibold">Drawdown Analysis</h2>
+              <p className="text-sm text-muted-foreground">Risk metrics</p>
+            </div>
+            <div className="divide-y divide-border/50">
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Max Drawdown</span>
+                <span className="font-mono font-medium text-loss">
+                  -{drawdown.maxDrawdownPct.toFixed(2)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Current Drawdown</span>
+                <span
+                  className={cn(
+                    "font-mono font-medium",
+                    drawdown.currentDrawdownPct > 0 ? "text-loss" : "text-profit"
+                  )}
+                >
+                  {drawdown.currentDrawdownPct > 0 ? "-" : ""}
+                  {drawdown.currentDrawdownPct.toFixed(2)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Peak P&L</span>
+                <span className="font-mono font-medium text-profit">
+                  {formatCurrency(drawdown.peakPnl)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Trough P&L</span>
+                <span className="font-mono font-medium text-loss">
+                  {formatCurrency(drawdown.troughPnl)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Volatility Metrics */}
+          <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/50">
+              <h2 className="font-semibold">Volatility & Consistency</h2>
+              <p className="text-sm text-muted-foreground">Performance stats</p>
+            </div>
+            <div className="divide-y divide-border/50">
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Daily Volatility</span>
+                <span className="font-mono font-medium">
+                  {formatCurrency(volatility.dailyVolatility)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Avg Daily Change</span>
+                <span
+                  className={cn(
+                    "font-mono font-medium",
+                    volatility.avgDailyChange >= 0 ? "text-profit" : "text-loss"
+                  )}
+                >
+                  {volatility.avgDailyChange >= 0 ? "+" : ""}
+                  {formatCurrency(volatility.avgDailyChange)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Win Rate</span>
+                <span className="font-mono font-medium">
+                  {volatility.winRate.toFixed(1)}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Sharpe Ratio</span>
+                <span className="font-mono font-medium">
+                  {volatility.sharpeRatio !== null
+                    ? volatility.sharpeRatio.toFixed(2)
+                    : "N/A"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Winning Days</span>
+                <span className="font-mono font-medium">
+                  {volatility.positiveDays} / {volatility.positiveDays + volatility.negativeDays}
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Max Win Streak</span>
+                <span className="font-mono font-medium text-profit">
+                  {volatility.maxWinStreak} days
+                </span>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3">
+                <span className="text-muted-foreground">Max Loss Streak</span>
+                <span className="font-mono font-medium text-loss">
+                  {volatility.maxLossStreak} days
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Top Markets */}
-          <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
-            <div className="px-5 py-4 border-b border-border/50">
-              <h2 className="font-semibold">Top Markets</h2>
-              <p className="text-sm text-muted-foreground">
-                Best performing markets
-              </p>
-            </div>
-            <div className="divide-y divide-border/50">
-              {marketStats
-                .sort((a, b) => b.pnl - a.pnl)
-                .map((stat, index) => (
-                  <Link
-                    key={stat.market.id}
-                    href={`/markets/${stat.market.id}`}
-                    className="flex items-center gap-4 px-5 py-3 table-row-hover animate-slide-up"
-                    style={{ animationDelay: `${index * 30}ms` }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate hover:text-primary transition-colors">
-                        {stat.market.name}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {stat.tradeCount} trades · {stat.winRate.toFixed(0)}% win
-                        rate
-                      </div>
-                    </div>
-                    <div
-                      className={cn(
-                        "font-mono font-medium",
-                        stat.pnl >= 0 ? "text-profit" : "text-loss"
-                      )}
-                    >
-                      {stat.pnl >= 0 ? "+" : ""}
-                      {formatCurrency(stat.pnl)}
-                    </div>
-                  </Link>
-                ))}
-            </div>
-          </div>
-
-          {/* Recent Trades */}
-          <div className="glass-card rounded-xl border border-border/50 overflow-hidden">
-            <div className="px-5 py-4 border-b border-border/50">
-              <h2 className="font-semibold">Recent Trades</h2>
-              <p className="text-sm text-muted-foreground">
-                Latest transactions
-              </p>
-            </div>
-            <div className="overflow-x-auto max-h-[400px]">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/50 hover:bg-transparent">
-                    <TableHead className="text-muted-foreground font-medium sticky top-0 bg-card">
-                      Market
-                    </TableHead>
-                    <TableHead className="text-muted-foreground font-medium sticky top-0 bg-card">
-                      Side
-                    </TableHead>
-                    <TableHead className="text-right text-muted-foreground font-medium sticky top-0 bg-card">
-                      P&L
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentTrades.slice(0, 10).map((trade, index) => (
-                    <TableRow
-                      key={trade.id}
-                      className="border-border/50 table-row-hover animate-slide-up"
-                      style={{ animationDelay: `${index * 20}ms` }}
-                    >
-                      <TableCell className="max-w-[200px]">
-                        <Link
-                          href={`/markets/${trade.marketId}`}
-                          className="block truncate hover:text-primary transition-colors"
-                        >
-                          {trade.marketName}
-                        </Link>
-                        <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(trade.timestamp)}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            "font-mono text-xs",
-                            trade.side === "BUY"
-                              ? "bg-profit/20 text-profit border-profit/30"
-                              : "bg-loss/20 text-loss border-loss/30"
-                          )}
-                        >
-                          {trade.side}
-                        </Badge>
-                      </TableCell>
-                      <TableCell
-                        className={cn(
-                          "text-right font-mono",
-                          trade.pnl >= 0 ? "text-profit" : "text-loss"
-                        )}
-                      >
-                        {trade.pnl >= 0 ? "+" : ""}
-                        {formatCurrency(trade.pnl)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+        {/* Polymarket Link */}
+        <div className="glass-card rounded-xl border border-border/50 p-5">
+          <p className="text-sm text-muted-foreground">
+            View on Polymarket:{" "}
+            <a
+              href={`https://polymarket.com/profile/${trader.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary hover:underline font-mono"
+            >
+              polymarket.com/profile/{trader.address.slice(0, 6)}...
+            </a>
+          </p>
         </div>
       </div>
     </div>
