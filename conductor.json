@@ -1,0 +1,6 @@
+{
+    "scripts": {
+        "setup": "bun install; cp $CONDUCTOR_ROOT_PATH/.env.local .env.local; cp -r $CONDUCTOR_ROOT_PATH/.claude .claude; bun run sync-env",
+        "run": "bun run dev"
+    }
+}
