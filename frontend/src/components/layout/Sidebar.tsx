@@ -8,6 +8,7 @@ import {
   Users,
   TrendingUp,
   Download,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./ThemeToggle";
@@ -32,6 +33,11 @@ const navigation = [
     name: "Calculator",
     href: "/calculator",
     icon: Calculator,
+  },
+  {
+    name: "Paper Trading",
+    href: "/paper-trading",
+    icon: FlaskConical,
   },
 ];
 
