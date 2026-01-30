@@ -71,6 +71,8 @@ class TimescaleService {
     private pool: Pool | null = null;
     private isConnected: boolean = false;
     private connectionUrl: string | null = null;
+    private tradesTableExists: boolean = false;
+    private tableCheckDone: boolean = false;
 
     /**
      * Initialize connection pool
@@ -95,10 +97,26 @@ class TimescaleService {
             // Test connection
             const client = await this.pool.connect();
             await client.query('SELECT NOW()');
+
+            // Check if trades table exists
+            const tableCheck = await client.query(`
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = 'trades'
+                ) as exists
+            `);
+            this.tradesTableExists = tableCheck.rows[0]?.exists === true;
+            this.tableCheckDone = true;
+
             client.release();
 
             this.isConnected = true;
             Logger.success('Connected to TimescaleDB');
+
+            if (!this.tradesTableExists) {
+                Logger.warning('TimescaleDB: "trades" table not found - trade syncing disabled. Run migrations to enable.');
+            }
         } catch (error) {
             Logger.error(`Failed to connect to TimescaleDB: ${error}`);
             throw error;
@@ -122,6 +140,13 @@ class TimescaleService {
      */
     isReady(): boolean {
         return this.isConnected && this.pool !== null;
+    }
+
+    /**
+     * Check if trade syncing is available (connected + trades table exists)
+     */
+    canSyncTrades(): boolean {
+        return this.isConnected && this.pool !== null && this.tradesTableExists;
     }
 
     /**

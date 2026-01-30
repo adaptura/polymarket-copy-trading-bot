@@ -191,8 +191,8 @@ const fetchTradeData = async () => {
                 await newActivity.save();
                 Logger.info(`New trade detected for ${address.slice(0, 6)}...${address.slice(-4)}`);
 
-                // Sync to TimescaleDB for analytics (if connected)
-                if (timescaleService.isReady()) {
+                // Sync to TimescaleDB for analytics (if connected and trades table exists)
+                if (timescaleService.canSyncTrades()) {
                     try {
                         const tradeRecord: TradeRecord = {
                             time: new Date(activity.timestamp * 1000),
