@@ -167,7 +167,7 @@ class PnLSnapshotService {
       const data: RawPnLPoint[] = await response.json();
 
       if (!Array.isArray(data)) {
-        Logger.warn(`Unexpected response format for ${address}`);
+        Logger.warning(`Unexpected response format for ${address}`);
         return [];
       }
 

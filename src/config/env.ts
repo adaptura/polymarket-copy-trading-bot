@@ -352,4 +352,15 @@ export const ENV = {
     TIMESCALE_URL: process.env.TIMESCALE_URL || '',
     // Analysis mode - when true, bot monitors and records but doesn't execute trades
     ANALYSIS_MODE: process.env.ANALYSIS_MODE === 'true',
+    // Trading mode: 'LIVE' | 'PAPER' | 'ANALYSIS'
+    // - LIVE: Execute real trades on Polymarket
+    // - PAPER: Simulate trades with real order book data (no real orders)
+    // - ANALYSIS: Monitor only, no execution (same as ANALYSIS_MODE=true)
+    TRADING_MODE: (process.env.TRADING_MODE as 'LIVE' | 'PAPER' | 'ANALYSIS') ||
+        (process.env.ANALYSIS_MODE === 'true' ? 'ANALYSIS' : 'LIVE'),
+    // Paper trading configuration
+    PAPER_PORTFOLIO_IDS: process.env.PAPER_PORTFOLIO_IDS
+        ? process.env.PAPER_PORTFOLIO_IDS.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : [],
+    PAPER_EXECUTION_DELAY_MS: parseInt(process.env.PAPER_EXECUTION_DELAY_MS || '300', 10),
 };

@@ -2,6 +2,7 @@ import connectDB, { closeDB } from './config/db';
 import { ENV } from './config/env';
 import createClobClient from './utils/createClobClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
+import paperTradeExecutor, { stopPaperTradeExecutor } from './services/paperTradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
@@ -26,6 +27,7 @@ const gracefulShutdown = async (signal: string) => {
         // Stop services
         stopTradeMonitor();
         stopTradeExecutor();
+        stopPaperTradeExecutor();
 
         // Give services time to finish current operations
         Logger.info('Waiting for services to finish current operations...');
@@ -69,11 +71,11 @@ export const main = async () => {
             yellow: '\x1b[33m',
             cyan: '\x1b[36m',
         };
-        
+
         console.log(`\n${colors.yellow}💡 First time running the bot?${colors.reset}`);
         console.log(`   Read the guide: ${colors.cyan}GETTING_STARTED.md${colors.reset}`);
         console.log(`   Run health check: ${colors.cyan}npm run health-check${colors.reset}\n`);
-        
+
         await connectDB();
         Logger.startup(USER_ADDRESSES, PROXY_WALLET);
 
@@ -91,13 +93,31 @@ export const main = async () => {
         Logger.success('CLOB client ready');
 
         Logger.separator();
+
+        // Start services based on trading mode
+        const tradingMode = ENV.TRADING_MODE;
+        Logger.info(`Trading mode: ${tradingMode}`);
+
         Logger.info('Starting trade monitor...');
         tradeMonitor();
 
-        Logger.info('Starting trade executor...');
-        tradeExecutor(clobClient);
-
-        // test(clobClient);
+        if (tradingMode === 'PAPER') {
+            Logger.header('PAPER TRADING MODE');
+            Logger.info('Trades will be simulated using live order book data');
+            Logger.info(`Execution delay: ${ENV.PAPER_EXECUTION_DELAY_MS}ms`);
+            Logger.separator();
+            paperTradeExecutor(clobClient);
+        } else if (tradingMode === 'LIVE') {
+            Logger.header('LIVE TRADING MODE');
+            Logger.warning('Real trades will be executed on Polymarket');
+            Logger.separator();
+            tradeExecutor(clobClient);
+        } else {
+            // ANALYSIS mode - no executor
+            Logger.header('ANALYSIS MODE');
+            Logger.info('Monitoring only - no trades will be executed');
+            Logger.separator();
+        }
     } catch (error) {
         Logger.error(`Fatal error during startup: ${error}`);
         await gracefulShutdown('startup-error');
